@@ -19,6 +19,7 @@
 
 import os
 import json
+import sqlite3
 from flask import Flask, request, jsonify, send_from_directory, render_template_string
 
 # ---------------------------------------------------------------------------
@@ -216,8 +217,15 @@ app = Flask(
 # ===========================================================================
 app.config["JSON_AS_ASCII"] = False
 
-# Ensure database tables exist both locally and when imported by Vercel.
-db.init_db()
+IS_VERCEL = bool(os.getenv("VERCEL"))
+
+# Initialize the writable local database, but avoid crashing on Vercel's
+# read-only deployment filesystem.
+try:
+    if not IS_VERCEL:
+        db.init_db()
+except sqlite3.OperationalError as error:
+    print(f"Database initialization skipped: {error}", flush=True)
 
 
 # ===========================================================================
@@ -289,6 +297,21 @@ def serve_static(filename):
 
 @app.route("/analytics-dashboard")
 def analytics_dashboard():
+    if IS_VERCEL:
+        return render_template_string(
+            """
+            <html>
+            <head><title>Katha Mitra Analytics</title></head>
+            <body style="font-family: Arial, sans-serif; background:#0d0221; color:#fff8e7; padding:32px;">
+                <h1>Katha Mitra Analytics</h1>
+                <p>The local SQLite dashboard is available only in local development.</p>
+                <p>On Vercel, analytics events are written to runtime logs instead of a shared SQLite database.</p>
+                <p>Please open Vercel runtime logs and search for <strong>ANALYTICS</strong>.</p>
+            </body>
+            </html>
+            """
+        )
+
     summary = db.get_analytics_summary()
     event_counts = db.get_event_counts_by_name()
     recent_events = db.get_recent_analytics_events(limit=200)
@@ -638,7 +661,8 @@ def api_analytics():
         "timestamp": data.get("timestamp"),
     }
 
-    db.insert_analytics_event(payload)
+    if not IS_VERCEL:
+        db.insert_analytics_event(payload)
     print(f"ANALYTICS {json.dumps(payload, ensure_ascii=False)}", flush=True)
     return jsonify({"ok": True})
 
