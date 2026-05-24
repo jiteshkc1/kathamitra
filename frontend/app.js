@@ -4,6 +4,7 @@
 
 const API_BASE = '/api';
 const AUTO_HANDS_FREE = true;
+let wakeLockSentinel = null;
 
 const STATE = {
     currentScreen: 'screen-landing',
@@ -29,6 +30,7 @@ const DOM = {
     btnSkipStory: document.getElementById('btn-skip-story'),
     btnSkipFeedback: document.getElementById('btn-skip-feedback'),
     btnQuizAction: document.getElementById('btn-quiz-action'),
+    btnReflectDone: document.getElementById('btn-reflect-done'),
 
     btnMicEmotion: document.getElementById('btn-mic-emotion'),
     btnMicFeedback: document.getElementById('btn-mic-feedback'),
@@ -80,6 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     DOM.btnSkipFeedback.addEventListener('click', navigateToQuiz);
     DOM.btnQuizAction.addEventListener('click', handleQuizMicClick);
+    DOM.btnReflectDone.addEventListener('click', finishReflection);
 
     DOM.btnMicEmotion.addEventListener('click', handleEmotionMicClick);
     DOM.btnMicFeedback.addEventListener('click', handleFeedbackMicClick);
@@ -91,6 +94,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!answer) return;
         DOM.quizTextInput.value = '';
         submitQuizAnswer(answer);
+    });
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && shouldHoldWakeLock()) {
+            requestWakeLock();
+        }
     });
 
     updateHistoryCount();
@@ -114,6 +123,45 @@ function scheduleScreenAction(screenId, action, delay = 600) {
     }, delay);
 }
 
+function shouldHoldWakeLock() {
+    return [
+        'screen-emotions',
+        'screen-story',
+        'screen-feedback',
+        'screen-quiz',
+        'screen-reflect'
+    ].includes(STATE.currentScreen);
+}
+
+async function requestWakeLock() {
+    if (!('wakeLock' in navigator) || document.visibilityState !== 'visible' || wakeLockSentinel) {
+        return;
+    }
+
+    try {
+        wakeLockSentinel = await navigator.wakeLock.request('screen');
+        wakeLockSentinel.addEventListener('release', () => {
+            wakeLockSentinel = null;
+        });
+    } catch (error) {
+        console.error('Wake lock request failed:', error);
+    }
+}
+
+async function releaseWakeLock() {
+    if (!wakeLockSentinel) {
+        return;
+    }
+
+    try {
+        await wakeLockSentinel.release();
+    } catch (error) {
+        console.error('Wake lock release failed:', error);
+    } finally {
+        wakeLockSentinel = null;
+    }
+}
+
 function canAutoplayStory() {
     const userAgent = navigator.userAgent || '';
     return !userAgent.includes('Edg/');
@@ -121,6 +169,7 @@ function canAutoplayStory() {
 
 async function navigateToEmotions() {
     showScreen('screen-emotions');
+    await requestWakeLock();
 
     if (STATE.emotions.length === 0) {
         try {
@@ -202,9 +251,9 @@ function matchEmotionTranscript(text) {
     const normalized = text.toLowerCase();
     const mappings = {
         'शृंगार': ['प्रेम', 'प्यार', 'शृंगार', 'मोहब्बत', 'रोमांस'],
-        'हास्य': ['हँसी', 'हास्य', 'मजाकिया', 'चुटकुला', 'हंसी'],
+        'हास्य': ['हँसी', 'हास्य', 'मज़ाकिया', 'चुटकुला', 'हंसी'],
         'करुण': ['करुणा', 'दुख', 'दर्द', 'उदासी', 'करुण'],
-        'रौद्र': ['क्रोध', 'गुस्सा', 'रौद्र', 'नाराजगी'],
+        'रौद्र': ['क्रोध', 'गुस्सा', 'रौद्र', 'नाराज़गी'],
         'वीर': ['वीरता', 'साहस', 'बहादुरी', 'वीर', 'शूरवीर'],
         'भयानक': ['भय', 'डर', 'भयानक', 'डरावना'],
         'बीभत्स': ['घृणा', 'बीभत्स', 'नफरत'],
@@ -232,6 +281,7 @@ async function selectEmotion(rasa, cardElement = null) {
 
 async function fetchAndPlayStory(rasa) {
     showScreen('screen-story');
+    await requestWakeLock();
     setStoryControlsState('loading');
     DOM.statusText.textContent = 'कहानी खोजी जा रही है...';
     DOM.waveform.classList.remove('active');
@@ -273,6 +323,7 @@ async function fetchAndPlayStory(rasa) {
 
 async function navigateToFeedback() {
     showScreen('screen-feedback');
+    await requestWakeLock();
     await speechService.speak('कहानी कैसी लगी?');
     if (AUTO_HANDS_FREE) {
         scheduleScreenAction('screen-feedback', handleFeedbackMicClick);
@@ -299,6 +350,7 @@ async function navigateToQuiz() {
     }
 
     showScreen('screen-quiz');
+    await requestWakeLock();
     STATE.quizAttempt = 0;
     DOM.quizResult.style.display = 'none';
     DOM.quizHint.style.display = 'none';
@@ -395,9 +447,12 @@ function showQuizResult(isCorrect, text) {
 
 async function navigateToReflect() {
     showScreen('screen-reflect');
+    await requestWakeLock();
     STATE.reflectionResponses = [];
     DOM.reflectResponse.style.display = 'none';
     DOM.btnMicReflect.style.display = 'flex';
+    DOM.btnReflectDone.style.display = 'inline-flex';
+    DOM.btnReflectDone.disabled = false;
     DOM.reflectQuestion.textContent = STATE.currentStory.reflection_question;
 
     DOM.characterList.innerHTML = '';
@@ -412,7 +467,7 @@ async function navigateToReflect() {
         });
     }
 
-    await speechService.speak(`एक और सवाल। ${STATE.currentStory.reflection_question}`);
+    await speechService.speak(`एक और सवाल। ${STATE.currentStory.reflection_question} आप अपनी बात बोलिए। जब आपकी बात पूरी हो जाए, तब done दबाएँ।`);
     if (AUTO_HANDS_FREE) {
         scheduleScreenAction('screen-reflect', handleReflectMicClick);
     }
@@ -426,9 +481,6 @@ async function handleReflectMicClick() {
 
         if (!answer) {
             await speechService.speak('मुझे कुछ सुनाई नहीं दिया। कृपया फिर से बोलें।');
-            if (AUTO_HANDS_FREE) {
-                scheduleScreenAction('screen-reflect', handleReflectMicClick);
-            }
             return;
         }
 
@@ -451,65 +503,32 @@ async function handleReflectMicClick() {
             }
         }
 
-        await continueReflection(answer);
+        updateReflectionSummary(answer);
     } catch (error) {
+        console.error(error);
         toggleMicUI(DOM.btnMicReflect, DOM.indReflect, false);
     }
 }
 
-async function handleReflectTap(charName, chipElement) {
+function handleReflectTap(charName, chipElement) {
     document.querySelectorAll('.character-chip').forEach((chip) => chip.classList.remove('selected'));
     chipElement.classList.add('selected');
-    await continueReflection(charName);
+    updateReflectionSummary(charName);
 }
 
-async function continueReflection(answer) {
-    if (answer) {
-        STATE.reflectionResponses.push(answer);
-    }
+function updateReflectionSummary(answer) {
+    if (!answer) return;
 
-    const wantsMore = await askIfUserHasMoreToSay();
-    if (wantsMore) {
-        DOM.reflectResponseText.textContent = 'जी, आप और बताइए।';
-        DOM.reflectResponse.style.display = 'block';
-        await speechService.speak('जी, आप और बताइए।');
-        DOM.btnMicReflect.style.display = 'flex';
-        if (AUTO_HANDS_FREE) {
-            scheduleScreenAction('screen-reflect', handleReflectMicClick);
-        }
-        return;
-    }
-
-    await finishReflection();
-}
-
-async function askIfUserHasMoreToSay() {
-    const yesKeywords = ['हाँ', 'हां', 'haan', 'yes', 'और', 'ji', 'जी'];
-    const noKeywords = ['नहीं', 'नही', 'no', 'बस', 'न', 'nahin', 'done'];
-
-    for (let attempt = 0; attempt < 3; attempt++) {
-        await speechService.speak('क्या आप कुछ और कहना चाहेंगे?');
-        toggleMicUI(DOM.btnMicReflect, DOM.indReflect, true);
-
-        try {
-            const response = await speechService.listenUntilPause(2000);
-            toggleMicUI(DOM.btnMicReflect, DOM.indReflect, false);
-
-            const normalized = (response || '').trim().toLowerCase();
-            if (!normalized) continue;
-            if (yesKeywords.some((keyword) => normalized.includes(keyword.toLowerCase()))) return true;
-            if (noKeywords.some((keyword) => normalized.includes(keyword.toLowerCase()))) return false;
-        } catch (error) {
-            toggleMicUI(DOM.btnMicReflect, DOM.indReflect, false);
-        }
-    }
-
-    return false;
+    STATE.reflectionResponses.push(answer);
+    DOM.reflectResponseText.textContent = STATE.reflectionResponses.join(' ');
+    DOM.reflectResponse.style.display = 'block';
 }
 
 async function finishReflection() {
     const closingMessage = 'आपने अपने मन के विचार मुझसे साझा करने के लिए आपका धन्यवाद। आपको सुनकर अच्छा लगा। आपका समय और जीवन मंगलमय हो। आशा है इस कहानी से आपको प्रेरणा मिलेगी। अगली कहानी सुनने के पहले इस कहानी पर थोड़ा समय चिंतन करिए। हरि ॐ तत्सत।';
+    speechService.cancelAll();
     DOM.btnMicReflect.style.display = 'none';
+    DOM.btnReflectDone.disabled = true;
     DOM.reflectResponseText.textContent = closingMessage;
     DOM.reflectResponse.style.display = 'block';
     await speechService.speak(closingMessage);
@@ -518,6 +537,7 @@ async function finishReflection() {
 
 async function navigateToFarewell() {
     showScreen('screen-farewell');
+    await releaseWakeLock();
     updateHistoryCount();
     await speechService.speak('आपकी भागीदारी के लिए धन्यवाद! फिर मिलेंगे, एक और कहानी के साथ!');
 }
@@ -561,6 +581,7 @@ async function playCurrentStory() {
     if (!STATE.currentStory) return;
 
     const story = STATE.currentStory;
+    await requestWakeLock();
     setStoryControlsState('playing');
     DOM.waveform.classList.add('active');
     DOM.statusText.textContent = 'कहानी सुनाई जा रही है...';
@@ -571,7 +592,7 @@ async function playCurrentStory() {
     if (!played) {
         DOM.waveform.classList.remove('active');
         setStoryControlsState('failed');
-        DOM.statusText.textContent = "आवाज़ शुरू नहीं हो सकी। फिर से सुनें या आगे बढ़ें।";
+        DOM.statusText.textContent = 'आवाज़ शुरू नहीं हो सकी। फिर से सुनें या आगे बढ़ें।';
         return;
     }
 

@@ -21,8 +21,11 @@
 <body>
     <section id="screen-landing" class="screen active">
         <div class="screen-content">
-            <div class="ornament" aria-hidden="true">☸</div>
-            <h1 class="app-title">कथा मित्र</h1>
+            <div class="brand-stack">
+                <div class="ornament" aria-hidden="true">☸</div>
+                <h1 class="app-title">कथा मित्र</h1>
+                <p class="brand-credit">by Jitesh</p>
+            </div>
             <p class="app-tagline">पौराणिक कहानियाँ, आपकी आवाज़ में</p>
 
             <button id="btn-start" class="mic-icon-display landing-start-button" aria-label="शुरू करें">
@@ -45,6 +48,13 @@
 
     <section id="screen-emotions" class="screen">
         <div class="screen-content">
+            <div class="brand-header">
+                <div class="brand-header-icon" aria-hidden="true">☸</div>
+                <div class="brand-header-text">
+                    <div class="brand-header-title">कथा मित्र</div>
+                    <div class="brand-header-credit">by Jitesh</div>
+                </div>
+            </div>
             <h2 class="screen-title">आप किस भाव की कहानी सुनना चाहेंगे?</h2>
             <p class="screen-subtitle">बोलें या नीचे से चुनें</p>
 
@@ -69,6 +79,13 @@
 
     <section id="screen-story" class="screen">
         <div class="screen-content">
+            <div class="brand-header">
+                <div class="brand-header-icon" aria-hidden="true">☸</div>
+                <div class="brand-header-text">
+                    <div class="brand-header-title">कथा मित्र</div>
+                    <div class="brand-header-credit">by Jitesh</div>
+                </div>
+            </div>
             <div id="story-source-badge" class="source-badge">रामायण</div>
             <h2 id="story-title" class="story-title">कहानी का शीर्षक</h2>
 
@@ -101,9 +118,16 @@
 
     <section id="screen-feedback" class="screen">
         <div class="screen-content">
+            <div class="brand-header">
+                <div class="brand-header-icon" aria-hidden="true">☸</div>
+                <div class="brand-header-text">
+                    <div class="brand-header-title">कथा मित्र</div>
+                    <div class="brand-header-credit">by Jitesh</div>
+                </div>
+            </div>
             <div class="feedback-icon" aria-hidden="true">💬</div>
             <h2 class="screen-title">कहानी कैसी लगी?</h2>
-            <p class="screen-subtitle">बोलकर बताएं या आगे बढ़ें</p>
+            <p class="screen-subtitle">बोलकर बताएँ या आगे बढ़ें</p>
 
             <button id="btn-mic-feedback" class="btn-mic" aria-label="बोलने के लिए दबाएँ">
                 <svg class="mic-svg" viewBox="0 0 24 24" fill="currentColor">
@@ -128,6 +152,13 @@
 
     <section id="screen-quiz" class="screen">
         <div class="screen-content">
+            <div class="brand-header">
+                <div class="brand-header-icon" aria-hidden="true">☸</div>
+                <div class="brand-header-text">
+                    <div class="brand-header-title">कथा मित्र</div>
+                    <div class="brand-header-credit">by Jitesh</div>
+                </div>
+            </div>
             <div class="quiz-icon" aria-hidden="true">🧠</div>
             <h2 class="screen-title">अब एक सवाल!</h2>
 
@@ -175,6 +206,13 @@
 
     <section id="screen-reflect" class="screen">
         <div class="screen-content">
+            <div class="brand-header">
+                <div class="brand-header-icon" aria-hidden="true">☸</div>
+                <div class="brand-header-text">
+                    <div class="brand-header-title">कथा मित्र</div>
+                    <div class="brand-header-credit">by Jitesh</div>
+                </div>
+            </div>
             <div class="reflect-icon" aria-hidden="true">🪞</div>
             <h2 class="screen-title">एक और सवाल...</h2>
 
@@ -185,6 +223,10 @@
             </div>
 
             <div id="character-list" class="character-list"></div>
+
+            <p class="screen-subtitle reflect-instruction">
+                अपनी बात बोलिए। जब आपकी बात पूरी हो जाए, तब Done दबाएँ।
+            </p>
 
             <button id="btn-mic-reflect" class="btn-mic" aria-label="बोलने के लिए दबाएँ">
                 <svg class="mic-svg" viewBox="0 0 24 24" fill="currentColor">
@@ -204,11 +246,22 @@
             <div id="reflect-response" class="reflect-response" style="display: none;">
                 <p id="reflect-response-text"></p>
             </div>
+
+            <button id="btn-reflect-done" class="btn-primary reflect-done-btn">
+                Done
+            </button>
         </div>
     </section>
 
     <section id="screen-farewell" class="screen">
         <div class="screen-content">
+            <div class="brand-header">
+                <div class="brand-header-icon" aria-hidden="true">☸</div>
+                <div class="brand-header-text">
+                    <div class="brand-header-title">कथा मित्र</div>
+                    <div class="brand-header-credit">by Jitesh</div>
+                </div>
+            </div>
             <div class="farewell-icon" aria-hidden="true">🙏</div>
             <h2 class="screen-title">बहुत बढ़िया!</h2>
             <p class="farewell-message">

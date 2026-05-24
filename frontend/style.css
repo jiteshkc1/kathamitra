@@ -156,6 +156,53 @@ body {
     padding: var(--space-lg) 0;
 }
 
+.brand-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+}
+
+.brand-credit {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    letter-spacing: 0.8px;
+}
+
+.brand-header {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-bottom: -8px;
+}
+
+.brand-header-icon {
+    font-size: 1.7rem;
+    color: var(--color-saffron);
+    opacity: 0.8;
+}
+
+.brand-header-text {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    line-height: 1.1;
+}
+
+.brand-header-title {
+    font-family: var(--font-heading);
+    font-size: 1.3rem;
+    color: var(--color-gold-soft);
+}
+
+.brand-header-credit {
+    font-size: 0.8rem;
+    color: var(--color-text-secondary);
+    letter-spacing: 0.4px;
+}
+
 /* =============================================================
    4. TYPOGRAPHY
    Heading and text styles using Indian-aesthetic fonts.
@@ -845,6 +892,23 @@ body {
     animation: fade-in var(--transition-normal);
     font-size: var(--font-size-base);
     color: var(--color-text-primary);
+}
+
+.reflect-instruction {
+    margin-top: -8px;
+}
+
+.reflect-done-btn {
+    min-width: 180px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #43a047 0%, #2e7d32 100%);
+    box-shadow: 0 6px 22px rgba(67, 160, 71, 0.35);
+}
+
+.reflect-done-btn:hover {
+    box-shadow: 0 10px 30px rgba(67, 160, 71, 0.45);
 }
 
 /* =============================================================
