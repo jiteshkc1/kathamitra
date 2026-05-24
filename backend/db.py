@@ -115,6 +115,21 @@ def init_db():
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS analytics_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_name TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            anonymous_user_id TEXT,
+            screen TEXT,
+            story_id INTEGER,
+            duration_seconds REAL,
+            metadata_json TEXT,
+            user_agent TEXT,
+            created_at TEXT NOT NULL
+        )
+    """)
+
     conn.commit()
 
     # -----------------------------------------------------------------------
@@ -285,3 +300,138 @@ def get_story_by_id(story_id):
 
     # Convert to dict if found, otherwise return None
     return dict(row) if row else None
+
+
+def insert_analytics_event(event):
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        INSERT INTO analytics_events (
+            event_name,
+            session_id,
+            anonymous_user_id,
+            screen,
+            story_id,
+            duration_seconds,
+            metadata_json,
+            user_agent,
+            created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            event["event_name"],
+            event["session_id"],
+            event.get("anonymous_user_id"),
+            event.get("screen"),
+            event.get("story_id"),
+            event.get("duration_seconds"),
+            json.dumps(event.get("metadata", {}), ensure_ascii=False),
+            event.get("user_agent"),
+            event["timestamp"],
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_analytics_summary():
+    conn = _get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT COUNT(*) AS count FROM analytics_events")
+    total_events = cursor.fetchone()["count"]
+
+    cursor.execute("SELECT COUNT(DISTINCT session_id) AS count FROM analytics_events")
+    total_sessions = cursor.fetchone()["count"]
+
+    cursor.execute(
+        """
+        SELECT COUNT(DISTINCT anonymous_user_id) AS count
+        FROM analytics_events
+        WHERE anonymous_user_id IS NOT NULL AND anonymous_user_id != ''
+        """
+    )
+    total_users = cursor.fetchone()["count"]
+
+    cursor.execute(
+        """
+        SELECT COUNT(*) AS count
+        FROM analytics_events
+        WHERE event_name = 'story_finished'
+        """
+    )
+    stories_finished = cursor.fetchone()["count"]
+
+    cursor.execute(
+        """
+        SELECT COUNT(*) AS count
+        FROM analytics_events
+        WHERE event_name = 'session_completed'
+        """
+    )
+    completed_sessions = cursor.fetchone()["count"]
+
+    cursor.execute(
+        """
+        SELECT AVG(duration_seconds) AS avg_duration
+        FROM analytics_events
+        WHERE event_name = 'session_completed' AND duration_seconds IS NOT NULL
+        """
+    )
+    avg_duration_row = cursor.fetchone()
+    avg_session_duration = round(avg_duration_row["avg_duration"] or 0, 1)
+
+    conn.close()
+    return {
+        "total_events": total_events,
+        "total_sessions": total_sessions,
+        "total_users": total_users,
+        "stories_finished": stories_finished,
+        "completed_sessions": completed_sessions,
+        "avg_session_duration": avg_session_duration,
+    }
+
+
+def get_recent_analytics_events(limit=100):
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT id, event_name, session_id, anonymous_user_id, screen, story_id,
+               duration_seconds, metadata_json, user_agent, created_at
+        FROM analytics_events
+        ORDER BY id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    events = []
+    for row in rows:
+        item = dict(row)
+        try:
+            item["metadata"] = json.loads(item.pop("metadata_json") or "{}")
+        except (json.JSONDecodeError, TypeError):
+            item["metadata"] = {}
+            item.pop("metadata_json", None)
+        events.append(item)
+    return events
+
+
+def get_event_counts_by_name():
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT event_name, COUNT(*) AS count
+        FROM analytics_events
+        GROUP BY event_name
+        ORDER BY count DESC, event_name ASC
+        """
+    )
+    rows = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return rows

@@ -4,6 +4,10 @@
 
 const API_BASE = '/api';
 const AUTO_HANDS_FREE = true;
+const ANALYTICS_USER_KEY = 'kathaMitraAnonUserId';
+const ANALYTICS_SESSION_ID_KEY = 'kathaMitraSessionId';
+const ANALYTICS_SESSION_START_KEY = 'kathaMitraSessionStartMs';
+
 let wakeLockSentinel = null;
 
 const STATE = {
@@ -12,7 +16,11 @@ const STATE = {
     currentStory: null,
     quizAttempt: 0,
     reflectionResponses: [],
-    history: JSON.parse(localStorage.getItem('kathaMitraHistory') || '[]')
+    history: JSON.parse(localStorage.getItem('kathaMitraHistory') || '[]'),
+    analytics: {
+        sessionStartedTracked: false,
+        currentStoryStartedAt: null
+    }
 };
 
 const DOM = {
@@ -70,17 +78,23 @@ const DOM = {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
+    initializeAnalyticsSession();
+
     if (!speechService.isSTTSupported() || !speechService.isTTSSupported()) {
         DOM.browserWarning.style.display = 'block';
     }
 
-    DOM.btnStart.addEventListener('click', navigateToEmotions);
+    DOM.btnStart.addEventListener('click', handleStartClick);
     DOM.btnPlayStory.addEventListener('click', playCurrentStory);
     DOM.btnSkipStory.addEventListener('click', () => {
         speechService.cancelAll();
+        trackEvent('story_skipped', getStoryAnalyticsPayload());
         navigateToFeedback();
     });
-    DOM.btnSkipFeedback.addEventListener('click', navigateToQuiz);
+    DOM.btnSkipFeedback.addEventListener('click', () => {
+        trackEvent('feedback_skipped', {});
+        navigateToQuiz();
+    });
     DOM.btnQuizAction.addEventListener('click', handleQuizMicClick);
     DOM.btnReflectDone.addEventListener('click', finishReflection);
 
@@ -102,8 +116,103 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    window.addEventListener('pagehide', () => {
+        trackEvent('session_pagehide', {
+            duration_seconds: getSessionDurationSeconds()
+        }, true);
+    });
+
     updateHistoryCount();
 });
+
+function createRandomId() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+        return window.crypto.randomUUID();
+    }
+    return `km-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function initializeAnalyticsSession() {
+    if (!localStorage.getItem(ANALYTICS_USER_KEY)) {
+        localStorage.setItem(ANALYTICS_USER_KEY, createRandomId());
+    }
+
+    if (!sessionStorage.getItem(ANALYTICS_SESSION_ID_KEY)) {
+        sessionStorage.setItem(ANALYTICS_SESSION_ID_KEY, createRandomId());
+    }
+
+    if (!sessionStorage.getItem(ANALYTICS_SESSION_START_KEY)) {
+        sessionStorage.setItem(ANALYTICS_SESSION_START_KEY, String(Date.now()));
+    }
+}
+
+function getAnonymousUserId() {
+    return localStorage.getItem(ANALYTICS_USER_KEY);
+}
+
+function getSessionId() {
+    return sessionStorage.getItem(ANALYTICS_SESSION_ID_KEY);
+}
+
+function getSessionStartMs() {
+    return Number(sessionStorage.getItem(ANALYTICS_SESSION_START_KEY) || Date.now());
+}
+
+function getSessionDurationSeconds() {
+    return Math.max(0, Math.round((Date.now() - getSessionStartMs()) / 1000));
+}
+
+function trackEvent(eventName, metadata = {}, useBeacon = false) {
+    const payload = {
+        event_name: eventName,
+        anonymous_user_id: getAnonymousUserId(),
+        session_id: getSessionId(),
+        screen: STATE.currentScreen,
+        story_id: STATE.currentStory ? STATE.currentStory.id : null,
+        timestamp: new Date().toISOString(),
+        duration_seconds: metadata.duration_seconds ?? null,
+        metadata
+    };
+
+    try {
+        if (useBeacon && navigator.sendBeacon) {
+            const body = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+            navigator.sendBeacon(`${API_BASE}/analytics`, body);
+            return;
+        }
+
+        fetch(`${API_BASE}/analytics`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            keepalive: true
+        }).catch((error) => {
+            console.error('Analytics request failed:', error);
+        });
+    } catch (error) {
+        console.error('Analytics tracking error:', error);
+    }
+}
+
+function getStoryAnalyticsPayload(extra = {}) {
+    return {
+        rasa: STATE.currentStory ? STATE.currentStory.rasa : null,
+        source: STATE.currentStory ? STATE.currentStory.source : null,
+        title: STATE.currentStory ? STATE.currentStory.title : null,
+        ...extra
+    };
+}
+
+async function handleStartClick() {
+    if (!STATE.analytics.sessionStartedTracked) {
+        STATE.analytics.sessionStartedTracked = true;
+        trackEvent('session_started', {
+            entry_point: 'start_button'
+        });
+    }
+
+    await navigateToEmotions();
+}
 
 function showScreen(screenId) {
     speechService.cancelAll();
@@ -170,6 +279,7 @@ function canAutoplayStory() {
 async function navigateToEmotions() {
     showScreen('screen-emotions');
     await requestWakeLock();
+    trackEvent('screen_viewed', { screen_name: 'emotions' });
 
     if (STATE.emotions.length === 0) {
         try {
@@ -275,6 +385,7 @@ async function selectEmotion(rasa, cardElement = null) {
         cardElement.classList.add('selected');
     }
 
+    trackEvent('emotion_selected', { rasa });
     await speechService.speak('ठीक है, मैं आपके लिए एक कहानी ढूँढ रहा हूँ।');
     await fetchAndPlayStory(rasa);
 }
@@ -285,6 +396,7 @@ async function fetchAndPlayStory(rasa) {
     setStoryControlsState('loading');
     DOM.statusText.textContent = 'कहानी खोजी जा रही है...';
     DOM.waveform.classList.remove('active');
+    trackEvent('screen_viewed', { screen_name: 'story_loading', rasa });
 
     try {
         const excludeIds = STATE.history.join(',');
@@ -294,6 +406,7 @@ async function fetchAndPlayStory(rasa) {
         const data = await res.json();
         const story = data.story;
         STATE.currentStory = story;
+        STATE.analytics.currentStoryStartedAt = null;
 
         DOM.storyTitle.textContent = story.title;
         DOM.storySource.textContent = story.source;
@@ -304,6 +417,8 @@ async function fetchAndPlayStory(rasa) {
             localStorage.setItem('kathaMitraHistory', JSON.stringify(STATE.history));
             updateHistoryCount();
         }
+
+        trackEvent('story_loaded', getStoryAnalyticsPayload({ rasa }));
 
         if (AUTO_HANDS_FREE && canAutoplayStory()) {
             DOM.statusText.textContent = 'कहानी तैयार है। अब कहानी सुनाई जाएगी।';
@@ -316,6 +431,7 @@ async function fetchAndPlayStory(rasa) {
         console.error('Story fetch error:', error);
         setStoryControlsState('failed');
         DOM.statusText.textContent = 'क्षमा करें, इस भाव की नई कहानी नहीं मिली।';
+        trackEvent('story_load_failed', { rasa, message: error.message });
         await speechService.speak('क्षमा करें, इस भाव की नई कहानी नहीं मिली। कृपया कोई और भाव चुनें।');
         setTimeout(navigateToEmotions, 3000);
     }
@@ -324,6 +440,7 @@ async function fetchAndPlayStory(rasa) {
 async function navigateToFeedback() {
     showScreen('screen-feedback');
     await requestWakeLock();
+    trackEvent('screen_viewed', { screen_name: 'feedback' });
     await speechService.speak('कहानी कैसी लगी?');
     if (AUTO_HANDS_FREE) {
         scheduleScreenAction('screen-feedback', handleFeedbackMicClick);
@@ -333,8 +450,12 @@ async function navigateToFeedback() {
 async function handleFeedbackMicClick() {
     toggleMicUI(DOM.btnMicFeedback, DOM.indFeedback, true);
     try {
-        await speechService.listenUntilPause(2000);
+        const feedbackTranscript = await speechService.listenUntilPause(2000);
         toggleMicUI(DOM.btnMicFeedback, DOM.indFeedback, false);
+        trackEvent('feedback_recorded', {
+            has_feedback: Boolean(feedbackTranscript),
+            transcript_length: feedbackTranscript ? feedbackTranscript.length : 0
+        });
         await speechService.speak('धन्यवाद! अब देखते हैं आपको कहानी कितनी याद है।');
         navigateToQuiz();
     } catch (error) {
@@ -359,6 +480,7 @@ async function navigateToQuiz() {
     DOM.quizFallback.style.display = 'none';
     DOM.quizQuestion.textContent = STATE.currentStory.recall_question;
 
+    trackEvent('screen_viewed', { screen_name: 'quiz' });
     await speechService.speak(`अब एक सवाल। ${STATE.currentStory.recall_question}`);
     if (AUTO_HANDS_FREE) {
         scheduleScreenAction('screen-quiz', handleQuizMicClick);
@@ -377,6 +499,7 @@ async function handleQuizMicClick() {
         if (!answer) {
             await speechService.speak('मुझे कुछ सुनाई नहीं दिया। कृपया फिर से बोलें।');
             DOM.quizFallback.style.display = 'block';
+            trackEvent('quiz_no_answer', { attempt: STATE.quizAttempt + 1 });
             if (AUTO_HANDS_FREE) {
                 scheduleScreenAction('screen-quiz', handleQuizMicClick);
             }
@@ -408,6 +531,10 @@ async function submitQuizAnswer(answer) {
 
         if (data.correct) {
             showQuizResult(true, 'बिल्कुल सही जवाब! बहुत बढ़िया।');
+            trackEvent('quiz_completed', {
+                correct: true,
+                attempt: STATE.quizAttempt
+            });
             await speechService.speak('बिल्कुल सही जवाब! बहुत बढ़िया।');
             setTimeout(navigateToReflect, 2000);
             return;
@@ -418,6 +545,9 @@ async function submitQuizAnswer(answer) {
             DOM.quizHintText.textContent = data.hint;
             DOM.quizHint.style.display = 'block';
             DOM.btnQuizAction.style.display = 'block';
+            trackEvent('quiz_hint_shown', {
+                attempt: STATE.quizAttempt
+            });
             await speechService.speak(`यह जवाब सही नहीं है। यह रहा एक संकेत। ${data.hint}`);
             if (AUTO_HANDS_FREE) {
                 scheduleScreenAction('screen-quiz', handleQuizMicClick, 900);
@@ -429,6 +559,10 @@ async function submitQuizAnswer(answer) {
             DOM.quizHint.style.display = 'none';
             DOM.btnMicQuiz.style.display = 'none';
             showQuizResult(false, `सही जवाब है: ${data.answer}`);
+            trackEvent('quiz_completed', {
+                correct: false,
+                attempt: STATE.quizAttempt
+            });
             await speechService.speak(`कोई बात नहीं। सही जवाब है: ${data.answer}`);
             setTimeout(navigateToReflect, 3000);
         }
@@ -467,6 +601,7 @@ async function navigateToReflect() {
         });
     }
 
+    trackEvent('screen_viewed', { screen_name: 'reflection' });
     await speechService.speak(`एक और सवाल। ${STATE.currentStory.reflection_question} आप अपनी बात बोलिए। जब आपकी बात पूरी हो जाए, तब done दबाएँ।`);
     if (AUTO_HANDS_FREE) {
         scheduleScreenAction('screen-reflect', handleReflectMicClick);
@@ -481,6 +616,7 @@ async function handleReflectMicClick() {
 
         if (!answer) {
             await speechService.speak('मुझे कुछ सुनाई नहीं दिया। कृपया फिर से बोलें।');
+            trackEvent('reflection_no_answer', {});
             return;
         }
 
@@ -522,10 +658,26 @@ function updateReflectionSummary(answer) {
     STATE.reflectionResponses.push(answer);
     DOM.reflectResponseText.textContent = STATE.reflectionResponses.join(' ');
     DOM.reflectResponse.style.display = 'block';
+    trackEvent('reflection_response_recorded', {
+        response_count: STATE.reflectionResponses.length,
+        response_length: answer.length
+    });
 }
 
 async function finishReflection() {
     const closingMessage = 'आपने अपने मन के विचार मुझसे साझा करने के लिए आपका धन्यवाद। आपको सुनकर अच्छा लगा। आपका समय और जीवन मंगलमय हो। आशा है इस कहानी से आपको प्रेरणा मिलेगी। अगली कहानी सुनने के पहले इस कहानी पर थोड़ा समय चिंतन करिए। हरि ॐ तत्सत।';
+    const storyDurationSeconds = STATE.analytics.currentStoryStartedAt
+        ? Math.max(0, Math.round((Date.now() - STATE.analytics.currentStoryStartedAt) / 1000))
+        : null;
+
+    trackEvent('reflection_done', {
+        response_count: STATE.reflectionResponses.length
+    });
+    trackEvent('session_completed', {
+        duration_seconds: getSessionDurationSeconds(),
+        story_duration_seconds: storyDurationSeconds
+    }, true);
+
     speechService.cancelAll();
     DOM.btnMicReflect.style.display = 'none';
     DOM.btnReflectDone.disabled = true;
@@ -538,6 +690,7 @@ async function finishReflection() {
 async function navigateToFarewell() {
     showScreen('screen-farewell');
     await releaseWakeLock();
+    trackEvent('screen_viewed', { screen_name: 'farewell' });
     updateHistoryCount();
     await speechService.speak('आपकी भागीदारी के लिए धन्यवाद! फिर मिलेंगे, एक और कहानी के साथ!');
 }
@@ -582,6 +735,8 @@ async function playCurrentStory() {
 
     const story = STATE.currentStory;
     await requestWakeLock();
+    STATE.analytics.currentStoryStartedAt = Date.now();
+    trackEvent('story_started', getStoryAnalyticsPayload());
     setStoryControlsState('playing');
     DOM.waveform.classList.add('active');
     DOM.statusText.textContent = 'कहानी सुनाई जा रही है...';
@@ -593,10 +748,16 @@ async function playCurrentStory() {
         DOM.waveform.classList.remove('active');
         setStoryControlsState('failed');
         DOM.statusText.textContent = 'आवाज़ शुरू नहीं हो सकी। फिर से सुनें या आगे बढ़ें।';
+        trackEvent('story_playback_failed', getStoryAnalyticsPayload());
         return;
     }
 
     DOM.waveform.classList.remove('active');
     setStoryControlsState('finished');
     DOM.statusText.textContent = 'कहानी समाप्त।';
+    trackEvent('story_finished', getStoryAnalyticsPayload({
+        duration_seconds: STATE.analytics.currentStoryStartedAt
+            ? Math.max(0, Math.round((Date.now() - STATE.analytics.currentStoryStartedAt) / 1000))
+            : null
+    }));
 }

@@ -19,7 +19,7 @@
 
 import os
 import json
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, render_template_string
 
 # ---------------------------------------------------------------------------
 # Import local modules for database access and fuzzy matching
@@ -41,6 +41,160 @@ except ImportError:
 FRONTEND_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "frontend")
 )
+
+ANALYTICS_DASHBOARD_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Katha Mitra Analytics</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #0d0221;
+            color: #fff8e7;
+        }
+        .wrap {
+            max-width: 1180px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+        h1, h2 {
+            margin: 0 0 16px;
+        }
+        .sub {
+            color: rgba(255, 248, 231, 0.75);
+            margin-bottom: 24px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            margin-bottom: 28px;
+        }
+        .card {
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 18px;
+        }
+        .label {
+            font-size: 13px;
+            color: rgba(255, 248, 231, 0.72);
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .value {
+            font-size: 30px;
+            font-weight: 700;
+            color: #ffd700;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 14px;
+            overflow: hidden;
+        }
+        th, td {
+            padding: 12px 10px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            vertical-align: top;
+            font-size: 14px;
+        }
+        th {
+            color: #ffd700;
+            background: rgba(255, 255, 255, 0.03);
+        }
+        .pill {
+            display: inline-block;
+            background: rgba(255, 153, 51, 0.18);
+            color: #ffcf99;
+            border-radius: 999px;
+            padding: 4px 10px;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+        .section {
+            margin-top: 28px;
+        }
+        pre {
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-word;
+            color: rgba(255, 248, 231, 0.85);
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <h1>Katha Mitra Analytics</h1>
+        <div class="sub">This dashboard reads from the local SQLite analytics table. On Vercel, serverless storage is ephemeral, so use runtime logs for durable production inspection.</div>
+
+        <div class="grid">
+            <div class="card"><div class="label">Total Events</div><div class="value">{{ summary.total_events }}</div></div>
+            <div class="card"><div class="label">Sessions</div><div class="value">{{ summary.total_sessions }}</div></div>
+            <div class="card"><div class="label">Anonymous Users</div><div class="value">{{ summary.total_users }}</div></div>
+            <div class="card"><div class="label">Stories Finished</div><div class="value">{{ summary.stories_finished }}</div></div>
+            <div class="card"><div class="label">Completed Sessions</div><div class="value">{{ summary.completed_sessions }}</div></div>
+            <div class="card"><div class="label">Avg Session Seconds</div><div class="value">{{ summary.avg_session_duration }}</div></div>
+        </div>
+
+        <div class="section">
+            <h2>Event Counts</h2>
+            <table>
+                <thead>
+                    <tr><th>Event</th><th>Count</th></tr>
+                </thead>
+                <tbody>
+                    {% for row in event_counts %}
+                    <tr>
+                        <td><span class="pill">{{ row.event_name }}</span></td>
+                        <td>{{ row.count }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <h2>Recent Events</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Event</th>
+                        <th>Session</th>
+                        <th>Screen</th>
+                        <th>Story</th>
+                        <th>Duration</th>
+                        <th>Metadata</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for event in recent_events %}
+                    <tr>
+                        <td>{{ event.created_at }}</td>
+                        <td><span class="pill">{{ event.event_name }}</span></td>
+                        <td>{{ event.session_id }}</td>
+                        <td>{{ event.screen or "" }}</td>
+                        <td>{{ event.story_id or "" }}</td>
+                        <td>{{ event.duration_seconds or "" }}</td>
+                        <td><pre>{{ event.metadata | tojson(indent=2) }}</pre></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>
+"""
 
 # Create the Flask app with the frontend directory as the static folder
 # Setting static_folder to the frontend dir allows Flask to serve HTML/CSS/JS
@@ -128,6 +282,19 @@ def serve_static(filename):
         The requested file from the frontend directory, or 404 if not found
     """
     return send_from_directory(FRONTEND_DIR, filename)
+
+
+@app.route("/analytics-dashboard")
+def analytics_dashboard():
+    summary = db.get_analytics_summary()
+    event_counts = db.get_event_counts_by_name()
+    recent_events = db.get_recent_analytics_events(limit=200)
+    return render_template_string(
+        ANALYTICS_DASHBOARD_HTML,
+        summary=summary,
+        event_counts=event_counts,
+        recent_events=recent_events,
+    )
 
 
 # ===========================================================================
@@ -436,7 +603,45 @@ def api_validate_character():
 
 
 # ===========================================================================
-# SECTION 9: Application Entry Point
+# SECTION 9: API Endpoint - Anonymous Analytics (POST /api/analytics)
+# ===========================================================================
+
+@app.route("/api/analytics", methods=["POST"])
+def api_analytics():
+    """
+    Record anonymous client-side analytics events.
+
+    The endpoint intentionally does not store personally identifying data.
+    Events are written to stdout as JSON so they can be viewed in local logs
+    and Vercel runtime logs.
+    """
+    data = request.get_json(silent=True) or {}
+
+    event_name = data.get("event_name")
+    session_id = data.get("session_id")
+
+    if not event_name or not session_id:
+        return jsonify({"error": "event_name and session_id are required"}), 400
+
+    payload = {
+        "event_name": event_name,
+        "session_id": session_id,
+        "anonymous_user_id": data.get("anonymous_user_id"),
+        "screen": data.get("screen"),
+        "story_id": data.get("story_id"),
+        "duration_seconds": data.get("duration_seconds"),
+        "metadata": data.get("metadata", {}),
+        "user_agent": request.headers.get("User-Agent"),
+        "timestamp": data.get("timestamp"),
+    }
+
+    db.insert_analytics_event(payload)
+    print(f"ANALYTICS {json.dumps(payload, ensure_ascii=False)}", flush=True)
+    return jsonify({"ok": True})
+
+
+# ===========================================================================
+# SECTION 10: Application Entry Point
 # ===========================================================================
 
 if __name__ == "__main__":
