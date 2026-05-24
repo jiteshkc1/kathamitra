@@ -28,7 +28,10 @@ from collections import defaultdict
 # ---------------------------------------------------------------------------
 # Import the database module to use its init_db() and DB_PATH
 # ---------------------------------------------------------------------------
-import db
+try:
+    from . import db
+except ImportError:
+    import db
 
 # ===========================================================================
 # SECTION 1: Constants

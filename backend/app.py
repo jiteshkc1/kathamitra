@@ -23,9 +23,14 @@ from flask import Flask, request, jsonify, send_from_directory
 
 # ---------------------------------------------------------------------------
 # Import local modules for database access and fuzzy matching
+# Works both when run as a script locally and when imported as a package
+# by Vercel.
 # ---------------------------------------------------------------------------
-import db
-import matcher
+try:
+    from . import db, matcher
+except ImportError:
+    import db
+    import matcher
 
 # ===========================================================================
 # SECTION 1: Flask App Configuration
