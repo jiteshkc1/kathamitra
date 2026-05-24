@@ -3,7 +3,15 @@
   "builds": [
     {
       "src": "backend/app.py",
-      "use": "@vercel/python"
+      "use": "@vercel/python",
+      "config": {
+        "includeFiles": [
+          "frontend/**",
+          "backend/stories.db",
+          "backend/stories_part1.json",
+          "backend/stories_part2.json"
+        ]
+      }
     }
   ],
   "routes": [
