@@ -4,10 +4,6 @@
     {
       "src": "backend/app.py",
       "use": "@vercel/python"
-    },
-    {
-      "src": "frontend/**",
-      "use": "@vercel/static"
     }
   ],
   "routes": [
@@ -16,12 +12,8 @@
       "dest": "backend/app.py"
     },
     {
-      "src": "/",
-      "dest": "frontend/index.html"
-    },
-    {
       "src": "/(.*)",
-      "dest": "frontend/$1"
+      "dest": "backend/app.py"
     }
   ]
 }
