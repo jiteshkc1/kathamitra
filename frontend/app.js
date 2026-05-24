@@ -530,12 +530,13 @@ async function submitQuizAnswer(answer) {
         const data = await res.json();
 
         if (data.correct) {
-            showQuizResult(true, 'बिल्कुल सही जवाब! बहुत बढ़िया।');
+            const successMessage = `बिल्कुल सही जवाब! बहुत बढ़िया। सही उत्तर है: ${STATE.currentStory.correct_answer}`;
+            showQuizResult(true, successMessage);
             trackEvent('quiz_completed', {
                 correct: true,
                 attempt: STATE.quizAttempt
             });
-            await speechService.speak('बिल्कुल सही जवाब! बहुत बढ़िया।');
+            await speechService.speak(successMessage);
             setTimeout(navigateToReflect, 2000);
             return;
         }
