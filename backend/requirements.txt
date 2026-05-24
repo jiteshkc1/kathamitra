@@ -1,0 +1,15 @@
+# =============================================================================
+# कथा मित्र (Katha Mitra) — Backend Dependencies
+# =============================================================================
+# This file lists all Python packages required to run the Flask backend server.
+#
+# Install with:   pip install -r requirements.txt
+# =============================================================================
+
+# Flask — lightweight WSGI web framework for serving API endpoints and static files
+flask>=3.0
+
+# RapidFuzz — high-performance fuzzy string matching library
+# Used for comparing Hindi (Devanagari) user input against expected answers
+# and character names with configurable similarity thresholds
+rapidfuzz>=3.0

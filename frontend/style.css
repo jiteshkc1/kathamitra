@@ -1,0 +1,1025 @@
+/* =============================================================
+   KATHA MITRA — कथा मित्र
+   Premium Design System for Elderly-Friendly Voice Storytelling App
+   
+   Design Philosophy:
+   - Large text and touch targets for elderly users
+   - High contrast (WCAG AA compliant)
+   - Indian aesthetic color palette (saffron, gold, indigo)
+   - Smooth, not-too-fast animations (400ms)
+   - Dark mode by default for reduced eye strain
+   ============================================================= */
+
+/* =============================================================
+   1. CSS CUSTOM PROPERTIES (Design Tokens)
+   Central place for all colors, sizes, and animation values.
+   Change these to theme the entire app.
+   ============================================================= */
+:root {
+    /* --- Colors --- */
+    --color-bg-primary: #0D0221;           /* Deep indigo background */
+    --color-bg-secondary: #1A0533;         /* Slightly lighter indigo */
+    --color-bg-card: rgba(255, 255, 255, 0.06); /* Glassmorphism card background */
+    --color-bg-card-hover: rgba(255, 255, 255, 0.12);
+    
+    --color-saffron: #FF9933;              /* Primary accent — Indian saffron */
+    --color-gold: #FFD700;                 /* Secondary accent — gold */
+    --color-gold-soft: #F5C842;            /* Muted gold for text */
+    --color-cream: #FFF8E7;               /* Light warm text */
+    --color-white: #FFFFFF;
+    --color-text-primary: #FFF8E7;         /* Main text color */
+    --color-text-secondary: rgba(255, 248, 231, 0.7); /* Muted text */
+    --color-text-dim: rgba(255, 248, 231, 0.4);
+    
+    --color-success: #4CAF50;              /* Correct answer green */
+    --color-error: #FF5252;                /* Wrong answer red */
+    --color-hint: #FFB74D;                 /* Hint orange */
+    
+    /* --- Gradient Presets --- */
+    --gradient-saffron: linear-gradient(135deg, #FF9933 0%, #FF6B00 100%);
+    --gradient-gold: linear-gradient(135deg, #FFD700 0%, #F5C842 100%);
+    --gradient-card: linear-gradient(135deg, rgba(255, 153, 51, 0.08) 0%, rgba(255, 215, 0, 0.04) 100%);
+    --gradient-bg: radial-gradient(ellipse at top, #1A0533 0%, #0D0221 70%);
+    
+    /* --- Typography (Elderly-Friendly: Larger than default) --- */
+    --font-heading: 'Tiro Devanagari Hindi', serif;
+    --font-body: 'Noto Sans Devanagari', sans-serif;
+    --font-size-xs: 16px;                  /* Smallest text — still readable */
+    --font-size-sm: 18px;
+    --font-size-base: 20px;                /* Base body text — larger for elderly */
+    --font-size-lg: 24px;
+    --font-size-xl: 28px;
+    --font-size-2xl: 36px;
+    --font-size-3xl: 48px;
+    --font-size-4xl: 64px;                 /* App title */
+    
+    /* --- Spacing --- */
+    --space-xs: 8px;
+    --space-sm: 12px;
+    --space-md: 16px;
+    --space-lg: 24px;
+    --space-xl: 32px;
+    --space-2xl: 48px;
+    
+    /* --- Animation Timing (Slower for elderly users) --- */
+    --transition-fast: 200ms ease;
+    --transition-normal: 400ms ease;
+    --transition-slow: 600ms ease;
+    
+    /* --- Layout --- */
+    --border-radius-sm: 12px;
+    --border-radius-md: 16px;
+    --border-radius-lg: 24px;
+    --border-radius-full: 50%;
+    --max-width: 480px;                    /* Mobile-first max width */
+    
+    /* --- Mic Button (Extra large for elderly) --- */
+    --mic-size: 120px;                     /* 120px diameter for easy tapping */
+    --mic-size-small: 90px;                /* Smaller mic for non-landing screens */
+    
+    /* --- Touch Target Minimums (WCAG AA) --- */
+    --touch-min: 48px;
+}
+
+/* =============================================================
+   2. RESET & BASE STYLES
+   Normalize browser defaults and set global typography
+   ============================================================= */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html {
+    font-size: var(--font-size-base);
+    -webkit-text-size-adjust: 100%;        /* Prevent iOS font size adjustment */
+    scroll-behavior: smooth;
+}
+
+body {
+    font-family: var(--font-body);
+    background: var(--gradient-bg);
+    background-attachment: fixed;
+    color: var(--color-text-primary);
+    min-height: 100vh;
+    min-height: 100dvh;                    /* Dynamic viewport height for mobile */
+    overflow-x: hidden;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* =============================================================
+   3. SCREEN SYSTEM
+   Each "screen" is a full-viewport section. Only one is visible
+   at a time. Transitions use fade + slide animations.
+   ============================================================= */
+.screen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100vh;
+    height: 100dvh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(30px);
+    transition: opacity var(--transition-normal), 
+                transform var(--transition-normal),
+                visibility var(--transition-normal);
+    z-index: 1;
+    overflow-y: auto;
+    padding: var(--space-lg) var(--space-md);
+}
+
+/* Active screen — visible with smooth entrance */
+.screen.active {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    z-index: 10;
+}
+
+/* Screen content wrapper — centers content and constrains width */
+.screen-content {
+    width: 100%;
+    max-width: var(--max-width);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: var(--space-lg);
+    padding: var(--space-lg) 0;
+}
+
+/* =============================================================
+   4. TYPOGRAPHY
+   Heading and text styles using Indian-aesthetic fonts.
+   All sizes are elderly-friendly (larger than typical).
+   ============================================================= */
+
+/* Decorative ornament (☸ wheel symbol) above app title */
+.ornament {
+    font-size: var(--font-size-3xl);
+    color: var(--color-saffron);
+    animation: spin-slow 20s linear infinite;
+    opacity: 0.6;
+}
+
+@keyframes spin-slow {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* App title — कथा मित्र */
+.app-title {
+    font-family: var(--font-heading);
+    font-size: var(--font-size-4xl);
+    background: var(--gradient-gold);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1.2;
+    letter-spacing: 2px;
+}
+
+/* Tagline below app title */
+.app-tagline {
+    font-size: var(--font-size-lg);
+    color: var(--color-text-secondary);
+    font-style: italic;
+}
+
+/* Screen titles (used on emotion, quiz, farewell screens) */
+.screen-title {
+    font-family: var(--font-heading);
+    font-size: var(--font-size-2xl);
+    color: var(--color-gold-soft);
+    line-height: 1.4;
+}
+
+/* Screen subtitles — secondary instruction text */
+.screen-subtitle {
+    font-size: var(--font-size-base);
+    color: var(--color-text-secondary);
+}
+
+/* =============================================================
+   5. MIC BUTTON — LANDING PAGE (Decorative)
+   Large animated microphone display on the welcome screen.
+   Not interactive — just visual eye-candy.
+   ============================================================= */
+.mic-icon-display {
+    position: relative;
+    width: 160px;
+    min-height: 210px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-md);
+    margin: var(--space-lg) 0;
+}
+
+.landing-start-button {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    color: inherit;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.landing-start-label {
+    font-family: var(--font-body);
+    font-size: var(--font-size-lg);
+    font-weight: 700;
+    color: var(--color-cream);
+    letter-spacing: 0.5px;
+}
+
+/* The circular mic container */
+.mic-circle {
+    width: var(--mic-size);
+    height: var(--mic-size);
+    border-radius: var(--border-radius-full);
+    background: var(--gradient-saffron);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 40px rgba(255, 153, 51, 0.4),
+                0 0 80px rgba(255, 153, 51, 0.2);
+    z-index: 2;
+    position: relative;
+}
+
+.mic-circle .mic-svg {
+    width: 48px;
+    height: 48px;
+    color: var(--color-white);
+}
+
+/* Pulsing rings behind the mic — breathing animation */
+.mic-pulse-ring {
+    position: absolute;
+    width: var(--mic-size);
+    height: var(--mic-size);
+    border-radius: var(--border-radius-full);
+    border: 2px solid var(--color-saffron);
+    animation: pulse-expand 2.5s ease-out infinite;
+    opacity: 0;
+}
+
+.mic-pulse-ring-2 {
+    animation-delay: 1.25s;
+}
+
+@keyframes pulse-expand {
+    0% {
+        transform: scale(1);
+        opacity: 0.6;
+    }
+    100% {
+        transform: scale(2);
+        opacity: 0;
+    }
+}
+
+/* =============================================================
+   6. MIC BUTTON — INTERACTIVE (Used on all input screens)
+   Large tap target (120px) for elderly users.
+   Pulses when actively listening.
+   ============================================================= */
+.btn-mic {
+    width: var(--mic-size-small);
+    height: var(--mic-size-small);
+    border-radius: var(--border-radius-full);
+    background: var(--gradient-saffron);
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    transition: transform var(--transition-fast), 
+                box-shadow var(--transition-fast);
+    box-shadow: 0 4px 20px rgba(255, 153, 51, 0.4);
+    -webkit-tap-highlight-color: transparent;
+}
+
+.btn-mic .mic-svg {
+    width: 36px;
+    height: 36px;
+    color: var(--color-white);
+    z-index: 2;
+}
+
+/* Hover / active states */
+.btn-mic:hover {
+    transform: scale(1.05);
+    box-shadow: 0 6px 30px rgba(255, 153, 51, 0.6);
+}
+
+.btn-mic:active {
+    transform: scale(0.95);
+}
+
+/* Active listening ring animation */
+.mic-active-ring {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border-radius: var(--border-radius-full);
+    border: 3px solid var(--color-saffron);
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+}
+
+/* When mic is actively listening, show pulsing ring */
+.btn-mic.listening .mic-active-ring {
+    animation: mic-listening-pulse 1.5s ease-in-out infinite;
+}
+
+.btn-mic.listening {
+    background: linear-gradient(135deg, #FF6B00 0%, #FF4500 100%);
+    box-shadow: 0 0 30px rgba(255, 107, 0, 0.6),
+                0 0 60px rgba(255, 107, 0, 0.3);
+}
+
+@keyframes mic-listening-pulse {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 0.6;
+    }
+    50% {
+        transform: scale(1.4);
+        opacity: 0;
+    }
+}
+
+/* =============================================================
+   7. BUTTONS
+   Primary and secondary buttons. Extra large for elderly users.
+   ============================================================= */
+
+/* Primary action button (Start, Restart, Continue) */
+.btn-primary {
+    font-family: var(--font-body);
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    color: var(--color-white);
+    background: var(--gradient-saffron);
+    border: none;
+    border-radius: var(--border-radius-lg);
+    padding: var(--space-md) var(--space-xl);
+    min-height: var(--touch-min);
+    cursor: pointer;
+    transition: transform var(--transition-fast),
+                box-shadow var(--transition-fast);
+    box-shadow: 0 4px 20px rgba(255, 153, 51, 0.3);
+    -webkit-tap-highlight-color: transparent;
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 30px rgba(255, 153, 51, 0.5);
+}
+
+.btn-primary:active {
+    transform: translateY(0);
+}
+
+/* Large variant for Start / Restart */
+.btn-large {
+    font-size: var(--font-size-xl);
+    padding: var(--space-lg) var(--space-2xl);
+    border-radius: var(--border-radius-lg);
+    min-width: 280px;
+}
+
+/* Secondary / Skip button */
+.btn-secondary {
+    font-family: var(--font-body);
+    font-size: var(--font-size-base);
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    background: var(--color-bg-card);
+    border: 1px solid rgba(255, 248, 231, 0.15);
+    border-radius: var(--border-radius-md);
+    padding: var(--space-sm) var(--space-lg);
+    min-height: var(--touch-min);
+    cursor: pointer;
+    transition: background var(--transition-fast),
+                color var(--transition-fast),
+                border-color var(--transition-fast);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    -webkit-tap-highlight-color: transparent;
+}
+
+.btn-secondary:hover {
+    background: var(--color-bg-card-hover);
+    color: var(--color-text-primary);
+    border-color: rgba(255, 248, 231, 0.3);
+}
+
+/* Feedback continue button gets a stronger positive treatment */
+#btn-skip-feedback {
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    color: var(--color-white);
+    background: linear-gradient(135deg, #43a047 0%, #2e7d32 100%);
+    border: none;
+    border-radius: var(--border-radius-lg);
+    padding: var(--space-md) var(--space-xl);
+    min-height: 60px;
+    min-width: 220px;
+    box-shadow: 0 6px 24px rgba(67, 160, 71, 0.35);
+}
+
+#btn-skip-feedback:hover {
+    background: linear-gradient(135deg, #4caf50 0%, #388e3c 100%);
+    color: var(--color-white);
+    transform: translateY(-2px);
+    box-shadow: 0 10px 28px rgba(67, 160, 71, 0.45);
+}
+
+/* =============================================================
+   8. EMOTION GRID
+   3x3 grid of emotion cards. Each card is large and tappable.
+   ============================================================= */
+.emotion-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-sm);
+    width: 100%;
+    max-width: 380px;
+}
+
+/* Individual emotion card */
+.emotion-card {
+    background: var(--gradient-card);
+    border: 1px solid rgba(255, 248, 231, 0.1);
+    border-radius: var(--border-radius-md);
+    padding: var(--space-md) var(--space-sm);
+    cursor: pointer;
+    transition: transform var(--transition-fast),
+                background var(--transition-fast),
+                border-color var(--transition-fast),
+                box-shadow var(--transition-fast);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-xs);
+    min-height: 100px;
+    justify-content: center;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Emoji in emotion card */
+.emotion-card .emotion-emoji {
+    font-size: var(--font-size-2xl);
+}
+
+/* Hindi label in emotion card */
+.emotion-card .emotion-label {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+/* Hover / tap effect on emotion cards */
+.emotion-card:hover {
+    transform: translateY(-3px) scale(1.02);
+    background: var(--color-bg-card-hover);
+    border-color: var(--color-saffron);
+    box-shadow: 0 4px 20px rgba(255, 153, 51, 0.2);
+}
+
+.emotion-card:active {
+    transform: scale(0.97);
+}
+
+/* Selected emotion card */
+.emotion-card.selected {
+    border-color: var(--color-gold);
+    background: rgba(255, 215, 0, 0.15);
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+}
+
+/* =============================================================
+   9. LISTENING INDICATOR
+   Animated dots shown when the mic is actively listening.
+   ============================================================= */
+.listening-indicator {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-xs);
+    color: var(--color-saffron);
+    font-size: var(--font-size-sm);
+}
+
+.listening-dots {
+    display: flex;
+    gap: 6px;
+}
+
+.listening-dots span {
+    width: 10px;
+    height: 10px;
+    border-radius: var(--border-radius-full);
+    background: var(--color-saffron);
+    animation: dot-bounce 1.4s ease-in-out infinite;
+}
+
+.listening-dots span:nth-child(2) {
+    animation-delay: 0.2s;
+}
+
+.listening-dots span:nth-child(3) {
+    animation-delay: 0.4s;
+}
+
+@keyframes dot-bounce {
+    0%, 80%, 100% {
+        transform: scale(0.6);
+        opacity: 0.4;
+    }
+    40% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+/* =============================================================
+   10. STORY NARRATION SCREEN
+   Source badge, story title, waveform, and scrollable text panel.
+   ============================================================= */
+
+/* Source badge (e.g., "रामायण") */
+.source-badge {
+    display: inline-block;
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    color: var(--color-saffron);
+    background: rgba(255, 153, 51, 0.15);
+    border: 1px solid rgba(255, 153, 51, 0.3);
+    border-radius: 100px;
+    padding: var(--space-xs) var(--space-md);
+    letter-spacing: 1px;
+}
+
+/* Story title */
+.story-title {
+    font-family: var(--font-heading);
+    font-size: var(--font-size-xl);
+    color: var(--color-gold-soft);
+    line-height: 1.4;
+}
+
+/* Waveform visualization — animated bars during TTS narration */
+.waveform {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    height: 50px;
+    opacity: 0.5;
+}
+
+.waveform.active {
+    opacity: 1;
+}
+
+.wave-bar {
+    width: 5px;
+    height: 20px;
+    background: var(--color-saffron);
+    border-radius: 3px;
+    transition: height 0.1s ease;
+}
+
+/* Waveform animation — each bar bounces at different speeds */
+.waveform.active .wave-bar {
+    animation: wave-bounce 1.2s ease-in-out infinite;
+}
+
+.waveform.active .wave-bar:nth-child(1) { animation-delay: 0s; height: 15px; }
+.waveform.active .wave-bar:nth-child(2) { animation-delay: 0.15s; height: 25px; }
+.waveform.active .wave-bar:nth-child(3) { animation-delay: 0.3s; height: 35px; }
+.waveform.active .wave-bar:nth-child(4) { animation-delay: 0.45s; height: 45px; }
+.waveform.active .wave-bar:nth-child(5) { animation-delay: 0.3s; height: 35px; }
+.waveform.active .wave-bar:nth-child(6) { animation-delay: 0.15s; height: 25px; }
+.waveform.active .wave-bar:nth-child(7) { animation-delay: 0s; height: 15px; }
+
+@keyframes wave-bounce {
+    0%, 100% { transform: scaleY(0.5); }
+    50% { transform: scaleY(1.5); }
+}
+
+/* Scrollable story text panel */
+.story-text-panel {
+    background: var(--color-bg-card);
+    border: 1px solid rgba(255, 248, 231, 0.08);
+    border-radius: var(--border-radius-md);
+    padding: var(--space-lg);
+    max-height: 300px;
+    overflow-y: auto;
+    width: 100%;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    text-align: left;
+    line-height: 1.8;
+    font-size: var(--font-size-base);
+    color: var(--color-text-primary);
+}
+
+/* Custom scrollbar for story panel */
+.story-text-panel::-webkit-scrollbar {
+    width: 6px;
+}
+
+.story-text-panel::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.story-text-panel::-webkit-scrollbar-thumb {
+    background: rgba(255, 153, 51, 0.3);
+    border-radius: 3px;
+}
+
+/* Narration status text */
+.status-text {
+    font-size: var(--font-size-sm);
+    color: var(--color-saffron);
+    font-style: italic;
+}
+
+.story-actions {
+    display: flex;
+    gap: var(--space-sm);
+    width: 100%;
+    margin-top: 20px;
+}
+
+.story-action-btn {
+    flex: 1;
+    min-width: 0;
+    min-height: 56px;
+    border: none;
+    border-radius: var(--border-radius-lg);
+    font-family: var(--font-body);
+    font-size: 1rem;
+    font-weight: 700;
+    padding: var(--space-md);
+    transition: background var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
+}
+
+.story-action-btn:disabled {
+    background: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 248, 231, 0.55);
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+.story-action-btn:not(:disabled) {
+    cursor: pointer;
+}
+
+.story-action-btn:not(:disabled):hover {
+    transform: translateY(-2px);
+}
+
+.story-action-relisten:not(:disabled) {
+    background: var(--gradient-saffron);
+    color: var(--color-white);
+    box-shadow: 0 6px 22px rgba(255, 153, 51, 0.35);
+}
+
+.story-action-next:not(:disabled) {
+    background: linear-gradient(135deg, #43a047 0%, #2e7d32 100%);
+    color: var(--color-white);
+    box-shadow: 0 6px 22px rgba(67, 160, 71, 0.35);
+}
+
+/* =============================================================
+   11. QUIZ & REFLECTION SCREENS
+   Question cards, result feedback, hint area, character list.
+   ============================================================= */
+
+/* Decorative icons above quiz/reflect screens */
+.quiz-icon, .reflect-icon, .feedback-icon, .farewell-icon {
+    font-size: var(--font-size-3xl);
+    line-height: 1;
+}
+
+/* Quiz question card */
+.quiz-card {
+    background: var(--gradient-card);
+    border: 1px solid rgba(255, 248, 231, 0.1);
+    border-radius: var(--border-radius-md);
+    padding: var(--space-lg);
+    width: 100%;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+.quiz-question-text {
+    font-family: var(--font-heading);
+    font-size: var(--font-size-lg);
+    color: var(--color-text-primary);
+    line-height: 1.6;
+}
+
+/* Quiz result feedback (correct/wrong) */
+.quiz-result {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-md);
+    border-radius: var(--border-radius-md);
+    width: 100%;
+    animation: fade-in var(--transition-normal);
+}
+
+.quiz-result.correct {
+    background: rgba(76, 175, 80, 0.15);
+    border: 1px solid rgba(76, 175, 80, 0.3);
+}
+
+.quiz-result.wrong {
+    background: rgba(255, 82, 82, 0.15);
+    border: 1px solid rgba(255, 82, 82, 0.3);
+}
+
+.quiz-result-icon {
+    font-size: var(--font-size-3xl);
+}
+
+.quiz-result-text {
+    font-size: var(--font-size-base);
+    line-height: 1.6;
+}
+
+/* Hint display area */
+.quiz-hint {
+    background: rgba(255, 183, 77, 0.1);
+    border: 1px solid rgba(255, 183, 77, 0.3);
+    border-radius: var(--border-radius-md);
+    padding: var(--space-md) var(--space-lg);
+    width: 100%;
+    text-align: left;
+    animation: fade-in var(--transition-normal);
+}
+
+.hint-label {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--color-hint);
+    margin-bottom: var(--space-xs);
+}
+
+.hint-text {
+    font-size: var(--font-size-base);
+    color: var(--color-text-primary);
+    line-height: 1.6;
+}
+
+/* Character selection list (tap fallback for reflection) */
+.character-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+    justify-content: center;
+    width: 100%;
+}
+
+.character-chip {
+    font-family: var(--font-body);
+    font-size: var(--font-size-base);
+    font-weight: 500;
+    color: var(--color-text-primary);
+    background: var(--color-bg-card);
+    border: 1px solid rgba(255, 248, 231, 0.15);
+    border-radius: 100px;
+    padding: var(--space-sm) var(--space-lg);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    min-height: var(--touch-min);
+    display: flex;
+    align-items: center;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.character-chip:hover {
+    background: rgba(255, 153, 51, 0.15);
+    border-color: var(--color-saffron);
+    color: var(--color-saffron);
+}
+
+.character-chip:active {
+    transform: scale(0.95);
+}
+
+.character-chip.selected {
+    background: rgba(255, 215, 0, 0.2);
+    border-color: var(--color-gold);
+    color: var(--color-gold);
+}
+
+/* Reflection response acknowledgment */
+.reflect-response {
+    background: rgba(76, 175, 80, 0.1);
+    border: 1px solid rgba(76, 175, 80, 0.2);
+    border-radius: var(--border-radius-md);
+    padding: var(--space-md) var(--space-lg);
+    width: 100%;
+    animation: fade-in var(--transition-normal);
+    font-size: var(--font-size-base);
+    color: var(--color-text-primary);
+}
+
+/* =============================================================
+   12. FAREWELL SCREEN
+   Thank you message and restart button.
+   ============================================================= */
+.farewell-message {
+    font-size: var(--font-size-lg);
+    color: var(--color-text-primary);
+    line-height: 1.8;
+}
+
+.farewell-submessage {
+    font-size: var(--font-size-base);
+    color: var(--color-text-secondary);
+}
+
+.stories-count-text {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-dim);
+    margin-top: var(--space-md);
+}
+
+/* =============================================================
+   13. BROWSER WARNING
+   Shown when Web Speech API is not available.
+   ============================================================= */
+.warning-text {
+    font-size: var(--font-size-sm);
+    color: var(--color-hint);
+    background: rgba(255, 183, 77, 0.1);
+    border: 1px solid rgba(255, 183, 77, 0.2);
+    border-radius: var(--border-radius-sm);
+    padding: var(--space-sm) var(--space-md);
+}
+
+/* =============================================================
+   14. UTILITY ANIMATIONS
+   Reusable animations used across components.
+   ============================================================= */
+@keyframes fade-in {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes gentle-float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+}
+
+/* Floating animation for decorative icons */
+.feedback-icon, .quiz-icon, .reflect-icon, .farewell-icon {
+    animation: gentle-float 3s ease-in-out infinite;
+}
+
+/* =============================================================
+   15. BACKGROUND DECORATIVE ELEMENTS
+   Subtle gradient orbs for depth and visual interest.
+   ============================================================= */
+body::before {
+    content: '';
+    position: fixed;
+    top: -200px;
+    right: -200px;
+    width: 500px;
+    height: 500px;
+    background: radial-gradient(circle, rgba(255, 153, 51, 0.08) 0%, transparent 70%);
+    border-radius: 50%;
+    z-index: 0;
+    pointer-events: none;
+}
+
+body::after {
+    content: '';
+    position: fixed;
+    bottom: -200px;
+    left: -200px;
+    width: 500px;
+    height: 500px;
+    background: radial-gradient(circle, rgba(255, 215, 0, 0.06) 0%, transparent 70%);
+    border-radius: 50%;
+    z-index: 0;
+    pointer-events: none;
+}
+
+/* =============================================================
+   16. RESPONSIVE ADJUSTMENTS
+   Fine-tune sizes for different screen widths.
+   Still maintains large, elderly-friendly sizing.
+   ============================================================= */
+
+/* Small phones (320px - 360px) */
+@media (max-width: 360px) {
+    :root {
+        --font-size-4xl: 48px;
+        --font-size-3xl: 36px;
+        --font-size-2xl: 28px;
+        --font-size-xl: 24px;
+        --mic-size: 100px;
+        --mic-size-small: 80px;
+    }
+    
+    .emotion-grid {
+        gap: var(--space-xs);
+    }
+    
+    .emotion-card {
+        min-height: 85px;
+        padding: var(--space-sm) var(--space-xs);
+    }
+    
+    .btn-large {
+        min-width: 240px;
+        font-size: var(--font-size-lg);
+    }
+}
+
+/* Tablets and larger (768px+) */
+@media (min-width: 768px) {
+    :root {
+        --max-width: 520px;
+        --mic-size: 140px;
+        --mic-size-small: 100px;
+    }
+    
+    .emotion-grid {
+        gap: var(--space-md);
+        max-width: 440px;
+    }
+    
+    .story-text-panel {
+        max-height: 400px;
+    }
+}
+
+/* =============================================================
+   17. ACCESSIBILITY
+   Focus styles, reduced motion preferences, high contrast.
+   ============================================================= */
+
+/* Visible focus ring for keyboard navigation */
+*:focus-visible {
+    outline: 3px solid var(--color-gold);
+    outline-offset: 3px;
+}
+
+/* Respect user's reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* =============================================================
+   18. SPEECH TRANSCRIPT DISPLAY
+   Shows what the app heard (for debugging / user confidence).
+   ============================================================= */
+.transcript-display {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    background: var(--color-bg-card);
+    border-radius: var(--border-radius-sm);
+    padding: var(--space-sm) var(--space-md);
+    width: 100%;
+    text-align: center;
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255, 248, 231, 0.05);
+}
+
+.transcript-display .label {
+    color: var(--color-text-dim);
+    margin-right: var(--space-xs);
+}
