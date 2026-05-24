@@ -42,6 +42,28 @@ except ImportError:
 FRONTEND_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "frontend")
 )
+ENV_FILE = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", ".env")
+)
+
+
+def load_local_env():
+    if not os.path.exists(ENV_FILE):
+        return
+
+    with open(ENV_FILE, "r", encoding="utf-8") as env_file:
+        for raw_line in env_file:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
+load_local_env()
 
 ANALYTICS_DASHBOARD_HTML = """
 <!DOCTYPE html>
@@ -135,7 +157,7 @@ ANALYTICS_DASHBOARD_HTML = """
 <body>
     <div class="wrap">
         <h1>Katha Mitra Analytics</h1>
-        <div class="sub">This dashboard reads from the local SQLite analytics table. On Vercel, serverless storage is ephemeral, so use runtime logs for durable production inspection.</div>
+        <div class="sub">{{ storage_note }}</div>
 
         <div class="grid">
             <div class="card"><div class="label">Total Events</div><div class="value">{{ summary.total_events }}</div></div>
@@ -297,7 +319,9 @@ def serve_static(filename):
 
 @app.route("/analytics-dashboard")
 def analytics_dashboard():
-    if IS_VERCEL:
+    storage_mode = db.analytics_storage_mode()
+
+    if IS_VERCEL and storage_mode != "supabase":
         return render_template_string(
             """
             <html>
@@ -312,14 +336,36 @@ def analytics_dashboard():
             """
         )
 
-    summary = db.get_analytics_summary()
-    event_counts = db.get_event_counts_by_name()
-    recent_events = db.get_recent_analytics_events(limit=200)
+    try:
+        summary = db.get_analytics_summary()
+        event_counts = db.get_event_counts_by_name()
+        recent_events = db.get_recent_analytics_events(limit=200)
+    except Exception as error:
+        if IS_VERCEL:
+            return render_template_string(
+                """
+                <html>
+                <head><title>Katha Mitra Analytics</title></head>
+                <body style="font-family: Arial, sans-serif; background:#0d0221; color:#fff8e7; padding:32px;">
+                    <h1>Katha Mitra Analytics</h1>
+                    <p>Analytics dashboard is not available right now.</p>
+                    <p>Error: {{ error_message }}</p>
+                </body>
+                </html>
+                """,
+                error_message=str(error),
+            ), 500
+        raise
+    if storage_mode == "supabase":
+        storage_note = "This dashboard reads from your Supabase analytics table and is suitable for deployed user traffic."
+    else:
+        storage_note = "This dashboard reads from the local SQLite analytics table. On Vercel, serverless storage is ephemeral, so use runtime logs or Supabase for durable production inspection."
     return render_template_string(
         ANALYTICS_DASHBOARD_HTML,
         summary=summary,
         event_counts=event_counts,
         recent_events=recent_events,
+        storage_note=storage_note,
     )
 
 
@@ -661,8 +707,11 @@ def api_analytics():
         "timestamp": data.get("timestamp"),
     }
 
-    if not IS_VERCEL:
-        db.insert_analytics_event(payload)
+    try:
+        if not IS_VERCEL or db.analytics_storage_mode() == "supabase":
+            db.insert_analytics_event(payload)
+    except Exception as error:
+        print(f"ANALYTICS_WRITE_FAILED {error}", flush=True)
     print(f"ANALYTICS {json.dumps(payload, ensure_ascii=False)}", flush=True)
     return jsonify({"ok": True})
 

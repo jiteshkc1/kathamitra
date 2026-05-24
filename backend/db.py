@@ -15,6 +15,10 @@ import sqlite3
 import os
 import json
 import random
+from collections import Counter
+from urllib import error as urllib_error
+from urllib import parse as urllib_parse
+from urllib import request as urllib_request
 
 # ---------------------------------------------------------------------------
 # Database path — resolve relative to this script's directory so it works
@@ -22,6 +26,7 @@ import random
 # ---------------------------------------------------------------------------
 DB_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(DB_DIR, "stories.db")
+SUPABASE_EVENTS_TABLE = "analytics_events"
 
 
 # ===========================================================================
@@ -302,7 +307,103 @@ def get_story_by_id(story_id):
     return dict(row) if row else None
 
 
+def analytics_storage_mode():
+    if get_supabase_url() and get_supabase_service_role_key():
+        return "supabase"
+    return "sqlite"
+
+
+def get_supabase_url():
+    return os.getenv("SUPABASE_URL", "").rstrip("/")
+
+
+def get_supabase_service_role_key():
+    return os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+
+
+def _supabase_headers(extra=None, prefer=None):
+    headers = {
+        "apikey": get_supabase_service_role_key(),
+        "Authorization": f"Bearer {get_supabase_service_role_key()}",
+    }
+    if prefer:
+        headers["Prefer"] = prefer
+    if extra:
+        headers.update(extra)
+    return headers
+
+
+def _supabase_request(path, method="GET", params=None, payload=None, prefer=None):
+    supabase_url = get_supabase_url()
+    if not supabase_url or not get_supabase_service_role_key():
+        raise RuntimeError("Supabase analytics is not configured")
+
+    query = f"?{urllib_parse.urlencode(params)}" if params else ""
+    url = f"{supabase_url}/rest/v1/{path}{query}"
+    data = None
+    headers = _supabase_headers(prefer=prefer)
+
+    if payload is not None:
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+
+    req = urllib_request.Request(url, data=data, headers=headers, method=method)
+    with urllib_request.urlopen(req, timeout=15) as response:
+        body = response.read()
+        if not body:
+            return None, response.headers
+        return json.loads(body.decode("utf-8")), response.headers
+
+
+def _fetch_supabase_rows(select_fields, filters=None, order="id.desc", limit=5000):
+    params = {
+        "select": select_fields,
+        "order": order,
+        "limit": limit,
+    }
+    if filters:
+        params.update(filters)
+    rows, _ = _supabase_request(SUPABASE_EVENTS_TABLE, params=params)
+    return rows or []
+
+
+def _fetch_supabase_exact_count(filters=None):
+    params = {"select": "id", "limit": 1}
+    if filters:
+        params.update(filters)
+    _, headers = _supabase_request(
+        SUPABASE_EVENTS_TABLE,
+        method="HEAD",
+        params=params,
+        prefer="count=exact",
+    )
+    content_range = headers.get("Content-Range", "")
+    if "/" not in content_range:
+        return 0
+    return int(content_range.split("/")[-1])
+
+
 def insert_analytics_event(event):
+    if analytics_storage_mode() == "supabase":
+        payload = {
+            "event_name": event["event_name"],
+            "session_id": event["session_id"],
+            "anonymous_user_id": event.get("anonymous_user_id"),
+            "screen": event.get("screen"),
+            "story_id": event.get("story_id"),
+            "duration_seconds": event.get("duration_seconds"),
+            "metadata_json": event.get("metadata", {}),
+            "user_agent": event.get("user_agent"),
+            "created_at": event["timestamp"],
+        }
+        _supabase_request(
+            SUPABASE_EVENTS_TABLE,
+            method="POST",
+            payload=payload,
+            prefer="return=minimal",
+        )
+        return
+
     conn = _get_connection()
     cursor = conn.cursor()
     cursor.execute(
@@ -336,6 +437,44 @@ def insert_analytics_event(event):
 
 
 def get_analytics_summary():
+    if analytics_storage_mode() == "supabase":
+        total_events = _fetch_supabase_exact_count()
+        total_sessions = _fetch_supabase_exact_count({"event_name": "eq.session_started"})
+        stories_finished = _fetch_supabase_exact_count({"event_name": "eq.story_finished"})
+        completed_sessions = _fetch_supabase_exact_count({"event_name": "eq.session_completed"})
+
+        session_rows = _fetch_supabase_rows(
+            "anonymous_user_id",
+            filters={"event_name": "eq.session_started"},
+            limit=5000,
+        )
+        total_users = len({
+            row.get("anonymous_user_id")
+            for row in session_rows
+            if row.get("anonymous_user_id")
+        })
+
+        completed_rows = _fetch_supabase_rows(
+            "duration_seconds",
+            filters={"event_name": "eq.session_completed"},
+            limit=5000,
+        )
+        durations = [
+            row.get("duration_seconds")
+            for row in completed_rows
+            if row.get("duration_seconds") is not None
+        ]
+        avg_session_duration = round(sum(durations) / len(durations), 1) if durations else 0
+
+        return {
+            "total_events": total_events,
+            "total_sessions": total_sessions,
+            "total_users": total_users,
+            "stories_finished": stories_finished,
+            "completed_sessions": completed_sessions,
+            "avg_session_duration": avg_session_duration,
+        }
+
     conn = _get_connection()
     cursor = conn.cursor()
 
@@ -394,6 +533,18 @@ def get_analytics_summary():
 
 
 def get_recent_analytics_events(limit=100):
+    if analytics_storage_mode() == "supabase":
+        rows = _fetch_supabase_rows(
+            "id,event_name,session_id,anonymous_user_id,screen,story_id,duration_seconds,metadata_json,user_agent,created_at",
+            limit=limit,
+        )
+        events = []
+        for row in rows:
+            item = dict(row)
+            item["metadata"] = item.pop("metadata_json", {}) or {}
+            events.append(item)
+        return events
+
     conn = _get_connection()
     cursor = conn.cursor()
     cursor.execute(
@@ -422,6 +573,14 @@ def get_recent_analytics_events(limit=100):
 
 
 def get_event_counts_by_name():
+    if analytics_storage_mode() == "supabase":
+        rows = _fetch_supabase_rows("event_name", limit=5000)
+        counts = Counter(row["event_name"] for row in rows if row.get("event_name"))
+        return [
+            {"event_name": event_name, "count": count}
+            for event_name, count in sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+        ]
+
     conn = _get_connection()
     cursor = conn.cursor()
     cursor.execute(
