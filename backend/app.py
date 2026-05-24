@@ -216,6 +216,9 @@ app = Flask(
 # ===========================================================================
 app.config["JSON_AS_ASCII"] = False
 
+# Ensure database tables exist both locally and when imported by Vercel.
+db.init_db()
+
 
 # ===========================================================================
 # SECTION 3: CORS Headers for Development
