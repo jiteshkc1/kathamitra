@@ -15,8 +15,14 @@ const STATE = {
     emotions: [],
     currentStory: null,
     quizAttempt: 0,
+    quizCompleted: false,
     reflectionResponses: [],
     history: JSON.parse(localStorage.getItem('kathaMitraHistory') || '[]'),
+    storyPlayback: {
+        isPlaying: false,
+        isPaused: false,
+        completed: false
+    },
     analytics: {
         sessionStartedTracked: false,
         currentStoryStartedAt: null
@@ -34,20 +40,18 @@ const DOM = {
     farewell: document.getElementById('screen-farewell'),
 
     btnStart: document.getElementById('btn-start'),
+    btnPauseStory: document.getElementById('btn-pause-story'),
     btnPlayStory: document.getElementById('btn-play-story'),
     btnSkipStory: document.getElementById('btn-skip-story'),
     btnSkipFeedback: document.getElementById('btn-skip-feedback'),
-    btnQuizAction: document.getElementById('btn-quiz-action'),
     btnReflectDone: document.getElementById('btn-reflect-done'),
 
     btnMicEmotion: document.getElementById('btn-mic-emotion'),
     btnMicFeedback: document.getElementById('btn-mic-feedback'),
-    btnMicQuiz: document.getElementById('btn-mic-quiz'),
     btnMicReflect: document.getElementById('btn-mic-reflect'),
 
     indEmotion: document.getElementById('listening-indicator'),
     indFeedback: document.getElementById('feedback-listening'),
-    indQuiz: document.getElementById('quiz-listening'),
     indReflect: document.getElementById('reflect-listening'),
 
     emotionGrid: document.getElementById('emotion-grid'),
@@ -59,14 +63,13 @@ const DOM = {
     statusText: document.getElementById('narration-status'),
 
     quizQuestion: document.getElementById('quiz-question'),
+    quizOptions: document.getElementById('quiz-options'),
     quizResult: document.getElementById('quiz-result'),
     quizResultIcon: document.getElementById('quiz-result-icon'),
     quizResultText: document.getElementById('quiz-result-text'),
-    quizHint: document.getElementById('quiz-hint'),
-    quizHintText: document.getElementById('quiz-hint-text'),
-    quizFallback: document.getElementById('quiz-fallback'),
-    quizTextInput: document.getElementById('quiz-text-input'),
-    btnQuizTextSubmit: document.getElementById('btn-quiz-text-submit'),
+    quizExplanation: document.getElementById('quiz-explanation'),
+    quizExplanationText: document.getElementById('quiz-explanation-text'),
+    quizInstruction: document.getElementById('quiz-instruction'),
 
     reflectQuestion: document.getElementById('reflect-question'),
     characterList: document.getElementById('character-list'),
@@ -85,9 +88,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     DOM.btnStart.addEventListener('click', handleStartClick);
+    DOM.btnPauseStory.addEventListener('click', toggleStoryPause);
     DOM.btnPlayStory.addEventListener('click', playCurrentStory);
     DOM.btnSkipStory.addEventListener('click', () => {
         speechService.cancelAll();
+        resetStoryPlaybackState();
         trackEvent('story_skipped', getStoryAnalyticsPayload());
         navigateToFeedback();
     });
@@ -95,20 +100,11 @@ document.addEventListener('DOMContentLoaded', () => {
         trackEvent('feedback_skipped', {});
         navigateToQuiz();
     });
-    DOM.btnQuizAction.addEventListener('click', handleQuizMicClick);
     DOM.btnReflectDone.addEventListener('click', finishReflection);
 
     DOM.btnMicEmotion.addEventListener('click', handleEmotionMicClick);
     DOM.btnMicFeedback.addEventListener('click', handleFeedbackMicClick);
-    DOM.btnMicQuiz.addEventListener('click', handleQuizMicClick);
     DOM.btnMicReflect.addEventListener('click', handleReflectMicClick);
-
-    DOM.btnQuizTextSubmit.addEventListener('click', () => {
-        const answer = DOM.quizTextInput.value.trim();
-        if (!answer) return;
-        DOM.quizTextInput.value = '';
-        submitQuizAnswer(answer);
-    });
 
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible' && shouldHoldWakeLock()) {
@@ -216,6 +212,9 @@ async function handleStartClick() {
 
 function showScreen(screenId) {
     speechService.cancelAll();
+    if (STATE.currentScreen === 'screen-story' && screenId !== 'screen-story') {
+        resetStoryPlaybackState();
+    }
     DOM.screens.forEach((screen) => screen.classList.remove('active'));
     const target = document.getElementById(screenId);
     if (target) {
@@ -386,13 +385,14 @@ async function selectEmotion(rasa, cardElement = null) {
     }
 
     trackEvent('emotion_selected', { rasa });
-    await speechService.speak('ठीक है, मैं आपके लिए एक कहानी ढूँढ रहा हूँ।');
+    await speechService.speak('ठीक है, आपके लिए एक कहानी खोजी जा रही है।');
     await fetchAndPlayStory(rasa);
 }
 
 async function fetchAndPlayStory(rasa) {
     showScreen('screen-story');
     await requestWakeLock();
+    resetStoryPlaybackState();
     setStoryControlsState('loading');
     DOM.statusText.textContent = 'कहानी खोजी जा रही है...';
     DOM.waveform.classList.remove('active');
@@ -407,6 +407,7 @@ async function fetchAndPlayStory(rasa) {
         const story = data.story;
         STATE.currentStory = story;
         STATE.analytics.currentStoryStartedAt = null;
+        resetStoryPlaybackState();
 
         DOM.storyTitle.textContent = story.title;
         DOM.storySource.textContent = story.source;
@@ -429,6 +430,7 @@ async function fetchAndPlayStory(rasa) {
         }
     } catch (error) {
         console.error('Story fetch error:', error);
+        resetStoryPlaybackState();
         setStoryControlsState('failed');
         DOM.statusText.textContent = 'क्षमा करें, इस भाव की नई कहानी नहीं मिली।';
         trackEvent('story_load_failed', { rasa, message: error.message });
@@ -473,104 +475,77 @@ async function navigateToQuiz() {
     showScreen('screen-quiz');
     await requestWakeLock();
     STATE.quizAttempt = 0;
+    STATE.quizCompleted = false;
     DOM.quizResult.style.display = 'none';
-    DOM.quizHint.style.display = 'none';
-    DOM.btnQuizAction.style.display = 'none';
-    DOM.btnMicQuiz.style.display = 'flex';
-    DOM.quizFallback.style.display = 'none';
+    DOM.quizExplanation.style.display = 'none';
     DOM.quizQuestion.textContent = STATE.currentStory.recall_question;
+    DOM.quizInstruction.textContent = 'सही विकल्प पर दबाएँ';
+    renderQuizOptions();
 
     trackEvent('screen_viewed', { screen_name: 'quiz' });
-    await speechService.speak(`अब एक सवाल। ${STATE.currentStory.recall_question}`);
-    if (AUTO_HANDS_FREE) {
-        scheduleScreenAction('screen-quiz', handleQuizMicClick);
-    }
+    await speechService.speak(`अब एक याद रखने वाला सवाल। ${STATE.currentStory.recall_question}`);
 }
 
-async function handleQuizMicClick() {
-    toggleMicUI(DOM.btnMicQuiz, DOM.indQuiz, true);
-    DOM.quizResult.style.display = 'none';
-    DOM.btnQuizAction.style.display = 'none';
+function renderQuizOptions() {
+    DOM.quizOptions.innerHTML = '';
+    const options = STATE.currentStory.quiz_options || [];
 
-    try {
-        const answer = await speechService.listenUntilPause(3000);
-        toggleMicUI(DOM.btnMicQuiz, DOM.indQuiz, false);
-
-        if (!answer) {
-            await speechService.speak('मुझे कुछ सुनाई नहीं दिया। कृपया फिर से बोलें।');
-            DOM.quizFallback.style.display = 'block';
-            trackEvent('quiz_no_answer', { attempt: STATE.quizAttempt + 1 });
-            if (AUTO_HANDS_FREE) {
-                scheduleScreenAction('screen-quiz', handleQuizMicClick);
-            }
-            return;
-        }
-
-        await submitQuizAnswer(answer);
-    } catch (error) {
-        console.error(error);
-        toggleMicUI(DOM.btnMicQuiz, DOM.indQuiz, false);
-        DOM.btnQuizAction.style.display = 'block';
-    }
+    options.forEach((option, index) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'quiz-option';
+        button.dataset.option = option;
+        button.innerHTML = `
+            <span class="quiz-option-index">${index + 1}</span>
+            <span class="quiz-option-text">${option}</span>
+        `;
+        button.addEventListener('click', () => submitQuizAnswer(option));
+        DOM.quizOptions.appendChild(button);
+    });
 }
 
 async function submitQuizAnswer(answer) {
+    if (STATE.quizCompleted) return;
     STATE.quizAttempt++;
+    const correctAnswer = STATE.currentStory.correct_answer;
+    const isCorrect = answer === correctAnswer;
 
-    try {
-        const res = await fetch(`${API_BASE}/validate-answer`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                story_id: STATE.currentStory.id,
-                user_answer: answer,
-                attempt: STATE.quizAttempt
-            })
+    if (isCorrect) {
+        STATE.quizCompleted = true;
+        showQuizResult(true, `बिल्कुल सही जवाब! बहुत बढ़िया। सही उत्तर है: ${correctAnswer}`);
+        highlightQuizOption(correctAnswer, 'correct');
+        disableQuizOptions();
+        trackEvent('quiz_completed', {
+            correct: true,
+            attempt: STATE.quizAttempt
         });
-        const data = await res.json();
-
-        if (data.correct) {
-            const successMessage = `बिल्कुल सही जवाब! बहुत बढ़िया। सही उत्तर है: ${STATE.currentStory.correct_answer}`;
-            showQuizResult(true, successMessage);
-            trackEvent('quiz_completed', {
-                correct: true,
-                attempt: STATE.quizAttempt
-            });
-            await speechService.speak(successMessage);
-            setTimeout(navigateToReflect, 2000);
-            return;
-        }
-
-        if (STATE.quizAttempt === 1 && data.hint) {
-            showQuizResult(false, 'यह जवाब सही नहीं है।');
-            DOM.quizHintText.textContent = data.hint;
-            DOM.quizHint.style.display = 'block';
-            DOM.btnQuizAction.style.display = 'block';
-            trackEvent('quiz_hint_shown', {
-                attempt: STATE.quizAttempt
-            });
-            await speechService.speak(`यह जवाब सही नहीं है। यह रहा एक संकेत। ${data.hint}`);
-            if (AUTO_HANDS_FREE) {
-                scheduleScreenAction('screen-quiz', handleQuizMicClick, 900);
-            }
-            return;
-        }
-
-        if (data.answer) {
-            DOM.quizHint.style.display = 'none';
-            DOM.btnMicQuiz.style.display = 'none';
-            showQuizResult(false, `सही जवाब है: ${data.answer}`);
-            trackEvent('quiz_completed', {
-                correct: false,
-                attempt: STATE.quizAttempt
-            });
-            await speechService.speak(`कोई बात नहीं। सही जवाब है: ${data.answer}`);
-            setTimeout(navigateToReflect, 3000);
-        }
-    } catch (error) {
-        console.error('Quiz Validation Error:', error);
-        DOM.btnQuizAction.style.display = 'block';
+        await speechService.speak(`बिल्कुल सही जवाब! बहुत बढ़िया। सही उत्तर है: ${correctAnswer}`);
+        setTimeout(navigateToReflect, 1800);
+        return;
     }
+
+    highlightQuizOption(answer, 'wrong');
+
+    if (STATE.quizAttempt === 1) {
+        showQuizResult(false, 'यह जवाब सही नहीं है। फिर से प्रयास करें।');
+        DOM.quizInstruction.textContent = 'एक बार और कोशिश करें';
+        trackEvent('quiz_retry_needed', { attempt: STATE.quizAttempt });
+        await speechService.speak('यह जवाब सही नहीं है। फिर से प्रयास करें।');
+        return;
+    }
+
+    STATE.quizCompleted = true;
+    highlightQuizOption(correctAnswer, 'correct');
+    disableQuizOptions();
+    DOM.quizExplanationText.textContent = STATE.currentStory.answer_explanation || `कहानी में बताया गया था कि ${correctAnswer}।`;
+    DOM.quizExplanation.style.display = 'block';
+    showQuizResult(false, `सही जवाब है: ${correctAnswer}`);
+    trackEvent('quiz_completed', {
+        correct: false,
+        attempt: STATE.quizAttempt
+    });
+    await speechService.speak(`यह जवाब सही नहीं है। सही जवाब है: ${correctAnswer}। ${DOM.quizExplanationText.textContent}`);
+    setTimeout(navigateToReflect, 3200);
 }
 
 function showQuizResult(isCorrect, text) {
@@ -666,7 +641,7 @@ function updateReflectionSummary(answer) {
 }
 
 async function finishReflection() {
-    const closingMessage = 'आपने अपने मन के विचार मुझसे साझा करने के लिए आपका धन्यवाद। आपको सुनकर अच्छा लगा। आपका समय और जीवन मंगलमय हो। आशा है इस कहानी से आपको प्रेरणा मिलेगी। अगली कहानी सुनने के पहले इस कहानी पर थोड़ा समय चिंतन करिए। हरि ॐ तत्सत।';
+    const closingMessage = 'आपने अपने मन के विचार मुझसे साझा करने के लिए आपका धन्यवाद। आपको सुनकर अच्छा लगा। आपका समय और जीवन मंगलमय रहे। आशा है इस कहानी से आपको प्रेरणा मिलेगी। अगली कहानी सुनने के पहले इस कहानी पर थोड़ा समय चिंतन करिए। राधे कृष्ण राधे कृष्ण।';
     const storyDurationSeconds = STATE.analytics.currentStoryStartedAt
         ? Math.max(0, Math.round((Date.now() - STATE.analytics.currentStoryStartedAt) / 1000))
         : null;
@@ -713,13 +688,67 @@ function updateHistoryCount() {
     }
 }
 
+function resetStoryPlaybackState() {
+    STATE.storyPlayback.isPlaying = false;
+    STATE.storyPlayback.isPaused = false;
+    STATE.storyPlayback.completed = false;
+    DOM.btnPauseStory.textContent = 'रोकें';
+}
+
+function updateStoryPauseButton() {
+    DOM.btnPauseStory.textContent = STATE.storyPlayback.isPaused ? 'फिर चलाएँ' : 'रोकें';
+}
+
+async function toggleStoryPause() {
+    if (!STATE.storyPlayback.isPlaying) return;
+
+    if (STATE.storyPlayback.isPaused) {
+        const resumed = speechService.resume();
+        if (!resumed) return;
+        STATE.storyPlayback.isPaused = false;
+        DOM.waveform.classList.add('active');
+        DOM.statusText.textContent = 'कहानी सुनाई जा रही है...';
+        updateStoryPauseButton();
+        trackEvent('story_resumed', getStoryAnalyticsPayload());
+        return;
+    }
+
+    const paused = speechService.pause();
+    if (!paused) return;
+    STATE.storyPlayback.isPaused = true;
+    DOM.waveform.classList.remove('active');
+    DOM.statusText.textContent = 'कहानी रुकी हुई है। चाहें तो फिर चलाएँ।';
+    updateStoryPauseButton();
+    trackEvent('story_paused', getStoryAnalyticsPayload());
+}
+
+function highlightQuizOption(optionText, state) {
+    const options = DOM.quizOptions.querySelectorAll('.quiz-option');
+    options.forEach((option) => {
+        option.classList.remove('correct', 'wrong');
+        if (option.dataset.option === optionText) {
+            option.classList.add(state);
+        }
+    });
+}
+
+function disableQuizOptions() {
+    DOM.quizOptions.querySelectorAll('.quiz-option').forEach((option) => {
+        option.disabled = true;
+    });
+}
+
 function setStoryControlsState(state) {
     const textDisplay = document.getElementById('story-text-display');
+    DOM.btnPauseStory.disabled = true;
 
     if (state === 'playing' || state === 'loading') {
         textDisplay.style.display = 'none';
         DOM.btnPlayStory.disabled = true;
         DOM.btnSkipStory.disabled = true;
+        if (state === 'playing') {
+            DOM.btnPauseStory.disabled = false;
+        }
         return;
     }
 
@@ -732,18 +761,29 @@ function setStoryControlsState(state) {
 }
 
 async function playCurrentStory() {
-    if (!STATE.currentStory) return;
+    if (!STATE.currentStory || STATE.storyPlayback.isPlaying) return;
 
     const story = STATE.currentStory;
     await requestWakeLock();
+    resetStoryPlaybackState();
+    STATE.storyPlayback.isPlaying = true;
     STATE.analytics.currentStoryStartedAt = Date.now();
     trackEvent('story_started', getStoryAnalyticsPayload());
     setStoryControlsState('playing');
     DOM.waveform.classList.add('active');
     DOM.statusText.textContent = 'कहानी सुनाई जा रही है...';
+    updateStoryPauseButton();
 
     const fullText = `${story.title}। यह कहानी ${story.source} से है। ${story.story_text}`;
     const played = await speechService.speak(fullText);
+    const wasCancelled = !STATE.storyPlayback.isPlaying;
+
+    if (wasCancelled) {
+        return;
+    }
+
+    STATE.storyPlayback.isPlaying = false;
+    STATE.storyPlayback.isPaused = false;
 
     if (!played) {
         DOM.waveform.classList.remove('active');
@@ -754,6 +794,7 @@ async function playCurrentStory() {
     }
 
     DOM.waveform.classList.remove('active');
+    STATE.storyPlayback.completed = true;
     setStoryControlsState('finished');
     DOM.statusText.textContent = 'कहानी समाप्त।';
     trackEvent('story_finished', getStoryAnalyticsPayload({

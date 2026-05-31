@@ -15,6 +15,10 @@ class SpeechService {
         this.ttsVoice = null;
         this.hasHindiVoice = false;
         this.isListening = false;
+        this.isPaused = false;
+        this.isSpeaking = false;
+        this.activeSpeechMode = null;
+        this.stopRequested = false;
 
         // Single audio element for fallback TTS.
         this.fallbackAudio = new Audio();
@@ -56,20 +60,31 @@ class SpeechService {
         const voices = window.speechSynthesis.getVoices();
         if (voices.length === 0) return;
 
-        const hindiVoice = voices.find((voice) =>
+        const maleHints = ['male', 'man', 'ravi', 'hemant', 'neeraj', 'abhijeet', 'arun'];
+        const isHindiVoice = (voice) =>
             voice.lang.startsWith('hi') ||
-            voice.name.toLowerCase().includes('hindi')
-        );
+            voice.name.toLowerCase().includes('hindi');
+        const isLikelyMaleVoice = (voice) => {
+            const voiceName = voice.name.toLowerCase();
+            return maleHints.some((hint) => voiceName.includes(hint));
+        };
+
+        const hindiMaleVoice = voices.find((voice) => isHindiVoice(voice) && isLikelyMaleVoice(voice));
+        const hindiVoice = voices.find((voice) => isHindiVoice(voice));
+        const fallbackMaleVoice = voices.find((voice) => isLikelyMaleVoice(voice));
 
         const fallbackVoice =
+            fallbackMaleVoice ||
             voices.find((voice) => voice.default) ||
             voices.find((voice) => voice.lang.startsWith('en')) ||
             voices[0];
 
-        this.ttsVoice = hindiVoice || fallbackVoice || null;
-        this.hasHindiVoice = Boolean(hindiVoice);
+        this.ttsVoice = hindiMaleVoice || hindiVoice || fallbackVoice || null;
+        this.hasHindiVoice = Boolean(hindiMaleVoice || hindiVoice);
 
-        if (hindiVoice) {
+        if (hindiMaleVoice) {
+            console.log('Found preferred male Hindi TTS voice:', hindiMaleVoice.name);
+        } else if (hindiVoice) {
             console.log('Found native Hindi TTS voice:', hindiVoice.name);
         } else if (this.ttsVoice) {
             console.log('No Hindi voice found. Using fallback voice:', this.ttsVoice.name);
@@ -87,6 +102,11 @@ class SpeechService {
     }
 
     cancelAll() {
+        this.stopRequested = true;
+        this.isPaused = false;
+        this.isSpeaking = false;
+        this.activeSpeechMode = null;
+
         if ('speechSynthesis' in window && (window.speechSynthesis.speaking || window.speechSynthesis.pending)) {
             window.speechSynthesis.cancel();
         }
@@ -105,9 +125,15 @@ class SpeechService {
 
     async speak(text) {
         this.cancelAll();
+        this.stopRequested = false;
+        this.isPaused = false;
+        this.isSpeaking = true;
 
         text = this.prepareSpeechText(text);
-        if (!text) return false;
+        if (!text) {
+            this.isSpeaking = false;
+            return false;
+        }
 
         const chunks = [];
         const rawChunks = text.match(/[^.!?।\n]+[.!?।\n]*/g) || [text];
@@ -127,12 +153,57 @@ class SpeechService {
         let playedAnyChunk = false;
 
         for (const chunk of chunks) {
+            if (this.stopRequested) break;
             if (!chunk.trim()) continue;
             const played = await this._speakChunk(chunk.trim());
             playedAnyChunk = playedAnyChunk || played;
         }
 
+        this.isSpeaking = false;
+        this.activeSpeechMode = null;
+        this.isPaused = false;
         return playedAnyChunk;
+    }
+
+    pause() {
+        if (!this.isSpeaking || this.isPaused) return false;
+
+        if (this.activeSpeechMode === 'native' && 'speechSynthesis' in window && window.speechSynthesis.speaking) {
+            window.speechSynthesis.pause();
+            this.isPaused = true;
+            return true;
+        }
+
+        if (this.activeSpeechMode === 'fallback' && this.isFallbackPlaying) {
+            this.fallbackAudio.pause();
+            this.isPaused = true;
+            return true;
+        }
+
+        return false;
+    }
+
+    resume() {
+        if (!this.isSpeaking || !this.isPaused) return false;
+
+        if (this.activeSpeechMode === 'native' && 'speechSynthesis' in window) {
+            window.speechSynthesis.resume();
+            this.isPaused = false;
+            return true;
+        }
+
+        if (this.activeSpeechMode === 'fallback' && this.isFallbackPlaying) {
+            const resumeAttempt = this.fallbackAudio.play();
+            if (resumeAttempt && typeof resumeAttempt.catch === 'function') {
+                resumeAttempt.catch((error) => {
+                    console.error('Fallback audio resume blocked:', error);
+                });
+            }
+            this.isPaused = false;
+            return true;
+        }
+
+        return false;
     }
 
     prepareSpeechText(text) {
@@ -155,16 +226,19 @@ class SpeechService {
         return new Promise((resolve) => {
             const playCloudFallback = () => {
                 const url = `https://translate.googleapis.com/translate_tts?ie=UTF-8&client=gtx&tl=hi&q=${encodeURIComponent(text)}`;
+                this.activeSpeechMode = 'fallback';
                 this.isFallbackPlaying = true;
                 this.fallbackAudio.src = url;
 
                 this.fallbackAudio.onended = () => {
                     this.isFallbackPlaying = false;
+                    this.isPaused = false;
                     resolve(true);
                 };
 
                 this.fallbackAudio.onerror = () => {
                     this.isFallbackPlaying = false;
+                    this.isPaused = false;
                     console.error('Cloud TTS failed for chunk:', text);
                     resolve(false);
                 };
@@ -182,6 +256,7 @@ class SpeechService {
                     return;
                 }
 
+                this.activeSpeechMode = 'native';
                 const utterance = new SpeechSynthesisUtterance(text);
                 utterance.lang = this.language;
                 utterance.voice = this.ttsVoice;
@@ -189,8 +264,12 @@ class SpeechService {
                 utterance.rate = this.hasHindiVoice ? 0.95 : 0.9;
                 utterance.pitch = 1;
 
-                utterance.onend = () => resolve(true);
+                utterance.onend = () => {
+                    this.isPaused = false;
+                    resolve(true);
+                };
                 utterance.onerror = (event) => {
+                    this.isPaused = false;
                     console.error('Native TTS failed for chunk:', text, event.error);
                     playCloudFallback();
                 };

@@ -20,6 +20,8 @@
 import os
 import json
 import sqlite3
+import random
+import re
 from flask import Flask, request, jsonify, send_from_directory, render_template_string
 
 # ---------------------------------------------------------------------------
@@ -64,6 +66,79 @@ def load_local_env():
 
 
 load_local_env()
+
+SPOKEN_HINDI_REPLACEMENTS = [
+    ("प्रत्यंचा", "डोरी"),
+    ("वरदान", "आशीर्वाद"),
+    ("मायावी", "जादुई"),
+    ("अमृत का भंडार", "अमृत"),
+    ("अशोक वाटिका", "अशोक वाटिका के बगीचे"),
+    ("चूड़ामणि", "सिर का गहना चूड़ामणि"),
+    ("अंजलिका अस्त्र", "अंजलिका नाम का अस्त्र"),
+    ("दिव्य अस्त्र", "विशेष अस्त्र"),
+    ("दिव्य", "विशेष"),
+    ("क्षत्रिय धर्म", "योद्धा का धर्म"),
+]
+
+
+def simplify_spoken_hindi(text):
+    simplified = str(text or "")
+    for old, new in SPOKEN_HINDI_REPLACEMENTS:
+        simplified = simplified.replace(old, new)
+    return simplified
+
+
+def shorten_story_text(text, max_sentences=7, max_chars=1050):
+    normalized = re.sub(r"\s+", " ", str(text or "")).strip()
+    if len(normalized) <= max_chars:
+        return normalized
+
+    parts = re.split(r"(?<=[।!?])\s+", normalized)
+    selected = []
+    current_length = 0
+
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        if selected and (len(selected) >= max_sentences or current_length + len(part) > max_chars):
+            break
+        selected.append(part)
+        current_length += len(part) + 1
+
+    if not selected:
+        return normalized[:max_chars].rstrip() + "..."
+
+    return " ".join(selected).strip()
+
+
+def build_story_text_for_listener(story):
+    story_text = simplify_spoken_hindi(story.get("story_text", ""))
+    return shorten_story_text(story_text)
+
+
+def build_quiz_options(story_id, correct_answer):
+    options = [correct_answer]
+    options.extend(db.get_quiz_distractors(story_id, correct_answer, limit=3))
+    unique_options = []
+    for option in options:
+        if option and option not in unique_options:
+            unique_options.append(option)
+
+    random.shuffle(unique_options)
+    return unique_options[:4]
+
+
+def build_answer_explanation(story):
+    hint = simplify_spoken_hindi((story.get("hint") or "").strip())
+    correct_answer = simplify_spoken_hindi((story.get("correct_answer") or "").strip())
+    if hint:
+        return f"कहानी में साफ बताया गया था कि {correct_answer}। {hint}"
+    return f"कहानी में यही बताया गया था: {correct_answer}।"
+
+
+def build_reflection_question(_story):
+    return "इस कहानी की कौन सी बात आपके मन को लगी, और क्यों?"
 
 ANALYTICS_DASHBOARD_HTML = """
 <!DOCTYPE html>
@@ -492,15 +567,20 @@ def api_get_story():
     # -----------------------------------------------------------------------
     response_story = {
         "id": story["id"],
-        "title": story["title"],
+        "title": simplify_spoken_hindi(story["title"]),
         "source": story["source"],
         "rasa": story["rasa"],
-        "story_text": story["story_text"],
+        "story_text": build_story_text_for_listener(story),
         "characters": story["characters"],
-        "recall_question": story["recall_question"],
-        "correct_answer": story["correct_answer"],
-        "hint": story["hint"],
-        "reflection_question": story["reflection_question"],
+        "recall_question": simplify_spoken_hindi(story["recall_question"]),
+        "correct_answer": simplify_spoken_hindi(story["correct_answer"]),
+        "quiz_options": [
+            simplify_spoken_hindi(option)
+            for option in build_quiz_options(story["id"], story["correct_answer"])
+        ],
+        "answer_explanation": build_answer_explanation(story),
+        "hint": simplify_spoken_hindi(story["hint"]),
+        "reflection_question": build_reflection_question(story),
     }
 
     return jsonify({"story": response_story})

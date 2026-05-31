@@ -307,6 +307,30 @@ def get_story_by_id(story_id):
     return dict(row) if row else None
 
 
+def get_quiz_distractors(story_id, correct_answer, limit=3):
+    """
+    Fetch plausible distractor answers from other stories.
+
+    The current story data model does not store explicit MCQ options, so
+    distractors are derived from other stories' correct answers.
+    """
+    conn = _get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT DISTINCT correct_answer
+        FROM stories
+        WHERE id != ? AND correct_answer != ?
+        ORDER BY RANDOM()
+        LIMIT ?
+        """,
+        (story_id, correct_answer, limit),
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [row["correct_answer"] for row in rows]
+
+
 def analytics_storage_mode():
     if get_supabase_url() and get_supabase_service_role_key():
         return "supabase"
